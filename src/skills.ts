@@ -107,7 +107,7 @@ export async function discoverSkills(
         }
       }
 
-      if (category !== "unknown" && !allowedCategories.has(category)) continue;
+      if (!allowedCategories.has(category)) continue;
 
       catalog.push({
         name: name ?? path.basename(path.dirname(filePath)),
