@@ -23,8 +23,21 @@ function parseFrontmatter(content: string): { name?: string; description?: strin
   };
 }
 
-async function walkForSkills(dir: string, depth: number, results: string[]): Promise<void> {
+async function walkForSkills(dir: string, depth: number, results: string[], seen: Set<string>): Promise<void> {
   if (depth > 8) return;
+  // Skip .git directories
+  if (path.basename(dir) === ".git") return;
+
+  // Resolve symlinks to avoid duplicates
+  let realDir: string;
+  try {
+    realDir = await fs.realpath(dir);
+  } catch {
+    return;
+  }
+  if (seen.has(realDir)) return;
+  seen.add(realDir);
+
   let entries;
   try {
     entries = await fs.readdir(dir, { withFileTypes: true });
@@ -32,12 +45,13 @@ async function walkForSkills(dir: string, depth: number, results: string[]): Pro
     return;
   }
   for (const entry of entries) {
+    if (entry.name.startsWith(".")) continue; // Skip dotfiles/dotdirs
     const full = path.join(dir, entry.name);
     if (entry.name === "SKILL.md" || entry.name === "skill.md") {
       results.push(full);
     }
     if (entry.isDirectory() || entry.isSymbolicLink()) {
-      await walkForSkills(full, depth + 1, results);
+      await walkForSkills(full, depth + 1, results, seen);
     }
   }
 }
@@ -45,9 +59,19 @@ async function walkForSkills(dir: string, depth: number, results: string[]): Pro
 export async function discoverSkills(
   skillCategories: string[],
   skillsDir = "/skills",
+  retries = 5,
 ): Promise<SkillCatalog> {
-  const skillFiles: string[] = [];
-  await walkForSkills(skillsDir, 0, skillFiles);
+  // Retry to handle git-sync race at startup
+  let skillFiles: string[] = [];
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    skillFiles = [];
+    await walkForSkills(skillsDir, 0, skillFiles, new Set());
+    if (skillFiles.length > 0) break;
+    if (attempt < retries) {
+      log.info("No skills found, waiting for git-sync...", { attempt: attempt + 1, retries });
+      await new Promise((r) => setTimeout(r, 3000));
+    }
+  }
 
   const catalog: SkillCatalog = [];
   const allowedCategories = new Set([...skillCategories, "shared"]);
