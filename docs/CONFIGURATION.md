@@ -22,10 +22,15 @@ Every knight runs the **same Docker image**. Identity, personality, capabilities
 
 ### File Overlay Priority
 1. **PVC** (`/data`) — Knight's own edits (highest priority, persists across restarts)
-2. **ConfigMap** — Injected personality files (seeded only if missing on PVC)
-3. **Image Defaults** — Base operational contract (fallback)
+2. **ConfigMap** (`/config`) — Injected personality files (SOUL.md, IDENTITY.md, TOOLS.md)
+3. **Image Defaults** (`/app/defaults`) — Base operational contract (fallback)
 
-This means knights can evolve their own files over time — ConfigMap seeds the initial state, the knight's own modifications take priority.
+Pi SDK's `DefaultResourceLoader` handles this natively:
+- `cwd=/data` — project-local discovery (PVC workspace)
+- `agentDir=/config` — global config (ConfigMap personality files, AGENTS.md)
+- `additionalSkillPaths=["/skills"]` — arsenal repo via git-sync
+
+Knights can evolve their own files over time — ConfigMap seeds the initial state, the knight's own modifications on PVC take priority.
 
 ## Environment Variables
 

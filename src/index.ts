@@ -1,8 +1,8 @@
 import { loadConfig } from "./config.js";
 import { initLogger, log } from "./logger.js";
-import { connectNats, subscribe, publishResult, drain, getStatus } from "./nats.js";
+import { connectNats, subscribe, publishResult, drain } from "./nats.js";
 import { startHealthServer, stopHealthServer, setSkillCount, setActiveTaskCount } from "./health.js";
-import { discoverSkills, type SkillCatalog } from "./skills.js";
+import { loadSkills } from "@mariozechner/pi-coding-agent";
 import { executeTask } from "./knight.js";
 import * as metrics from "./metrics.js";
 
@@ -11,7 +11,6 @@ async function main(): Promise<void> {
   initLogger(config.knightName, config.logLevel);
 
   log.info("Pi-Knight starting", {
-    knight: config.knightName,
     model: config.knightModel,
     topics: config.subscribeTopics,
     skills: config.knightSkills,
@@ -21,17 +20,33 @@ async function main(): Promise<void> {
   startHealthServer(config);
   log.info("Health server started", { port: config.metricsPort });
 
-  // Discover skills
-  let skills: SkillCatalog = [];
-  try {
-    skills = await discoverSkills(config.knightSkills);
-    setSkillCount(skills.length);
-    log.info("Skills loaded", { count: skills.length });
-  } catch (err) {
-    log.warn("Skill discovery failed (continuing without skills)", {
-      error: String(err),
+  // Discover skills using Pi SDK's built-in agentskills.io loader
+  // Retry for git-sync race at startup
+  let skillCount = 0;
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const { skills, diagnostics } = loadSkills({
+      cwd: "/data",
+      agentDir: "/config",
+      skillPaths: ["/skills"],
+      includeDefaults: true,
     });
+    skillCount = skills.length;
+    if (skillCount > 0) {
+      log.info("Skills loaded (Pi SDK)", {
+        count: skillCount,
+        names: skills.map((s) => s.name),
+      });
+      for (const d of diagnostics) {
+        if (d.type === "warning") log.warn("Skill diagnostic", { message: d.message, path: d.path });
+      }
+      break;
+    }
+    if (attempt < 5) {
+      log.info("No skills found, waiting for git-sync...", { attempt: attempt + 1 });
+      await new Promise((r) => setTimeout(r, 3000));
+    }
   }
+  setSkillCount(skillCount);
 
   // Connect to NATS
   await connectNats(config);
@@ -42,19 +57,11 @@ async function main(): Promise<void> {
 
   // Task execution state
   let activeCount = 0;
-  const taskQueue: Array<{
-    task: string;
-    taskId: string;
-    timeoutMs?: number;
-  }> = [];
+  const taskQueue: Array<{ task: string; taskId: string; timeoutMs?: number }> = [];
   let shuttingDown = false;
 
   // Process a single task
-  async function processTask(
-    taskText: string,
-    taskId: string,
-    timeoutMs: number,
-  ): Promise<void> {
+  async function processTask(taskText: string, taskId: string, timeoutMs: number): Promise<void> {
     activeCount++;
     setActiveTaskCount(activeCount);
     metrics.activeTasks.labels(config.knightName).set(activeCount);
@@ -64,10 +71,9 @@ async function main(): Promise<void> {
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-      const result = await executeTask(taskText, config, skills, controller.signal);
+      const result = await executeTask(taskText, config, controller.signal);
       const durationMs = Date.now() - startTime;
 
-      // Publish result
       await publishResult(taskId, {
         task_id: taskId,
         knight: config.knightName,
@@ -77,10 +83,10 @@ async function main(): Promise<void> {
         cost: result.cost,
         tokens: result.tokens,
         model: result.model,
+        tool_calls: result.toolCalls,
         timestamp: new Date().toISOString(),
       });
 
-      // Update metrics
       metrics.tasksTotal.labels(config.knightName, "success").inc();
       metrics.taskDuration.labels(config.knightName).observe(durationMs / 1000);
       metrics.llmCost.labels(config.knightName, result.model).inc(result.cost);
@@ -111,7 +117,6 @@ async function main(): Promise<void> {
       setActiveTaskCount(activeCount);
       metrics.activeTasks.labels(config.knightName).set(activeCount);
 
-      // Process queued tasks
       if (taskQueue.length > 0 && activeCount < config.maxConcurrentTasks) {
         const next = taskQueue.shift()!;
         processTask(next.task, next.taskId, next.timeoutMs ?? config.taskTimeoutMs);
@@ -123,14 +128,12 @@ async function main(): Promise<void> {
   (async () => {
     for await (const parsed of tasks) {
       if (shuttingDown) break;
-
       const timeoutMs = parsed.timeoutMs ?? config.taskTimeoutMs;
 
       if (activeCount >= config.maxConcurrentTasks) {
         log.info("At capacity, queuing task", { taskId: parsed.taskId, queueSize: taskQueue.length + 1 });
         taskQueue.push({ task: parsed.task, taskId: parsed.taskId, timeoutMs });
       } else {
-        // Fire and forget — processTask handles its own lifecycle
         processTask(parsed.task, parsed.taskId, timeoutMs);
       }
     }
@@ -141,7 +144,6 @@ async function main(): Promise<void> {
     log.info("Shutdown signal received", { signal });
     shuttingDown = true;
 
-    // Wait for active tasks (with a hard timeout)
     const maxWait = 60_000;
     const start = Date.now();
     while (activeCount > 0 && Date.now() - start < maxWait) {
@@ -161,7 +163,7 @@ async function main(): Promise<void> {
   process.on("SIGTERM", () => shutdown("SIGTERM"));
   process.on("SIGINT", () => shutdown("SIGINT"));
 
-  log.info("Pi-Knight ready", { knight: config.knightName });
+  log.info("Pi-Knight ready");
 }
 
 main().catch((err) => {
