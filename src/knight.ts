@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { getModel } from "@mariozechner/pi-ai";
+import type { AssistantMessage, Usage } from "@mariozechner/pi-ai";
 import { Agent } from "@mariozechner/pi-agent-core";
 import type { AgentEvent } from "@mariozechner/pi-agent-core";
 import { createCodingTools } from "@mariozechner/pi-coding-agent";
@@ -101,35 +102,34 @@ export async function executeTask(
   let totalCost = 0;
   let lastAssistantText = "";
 
+  function extractUsage(msg: unknown): void {
+    const m = msg as AssistantMessage | undefined;
+    if (!m?.usage) return;
+    const u: Usage = m.usage;
+    totalInputTokens += u.input ?? 0;
+    totalOutputTokens += u.output ?? 0;
+    totalCost += u.cost?.total ?? 0;
+  }
+
+  function extractText(msg: unknown): void {
+    const m = msg as AssistantMessage | undefined;
+    if (!m?.content) return;
+    const parts = Array.isArray(m.content)
+      ? m.content
+          .filter((c: any) => c.type === "text")
+          .map((c: any) => c.text)
+          .join("")
+      : "";
+    if (parts) lastAssistantText = parts;
+  }
+
   const unsub = agent.subscribe((event: AgentEvent) => {
     if (event.type === "message_end") {
-      // Extract text from the completed message
-      const msg = event.message as any;
-      if (msg?.content) {
-        const textParts = Array.isArray(msg.content)
-          ? msg.content
-              .filter((c: any) => c.type === "text")
-              .map((c: any) => c.text)
-              .join("")
-          : typeof msg.content === "string"
-            ? msg.content
-            : "";
-        if (textParts) lastAssistantText = textParts;
-      }
-      // Track usage
-      if (msg?.usage) {
-        totalInputTokens += msg.usage.inputTokens ?? msg.usage.input_tokens ?? 0;
-        totalOutputTokens += msg.usage.outputTokens ?? msg.usage.output_tokens ?? 0;
-        totalCost += msg.usage.cost ?? 0;
-      }
+      extractText(event.message);
+      extractUsage(event.message);
     }
     if (event.type === "turn_end") {
-      const msg = event.message as any;
-      if (msg?.usage) {
-        totalInputTokens += msg.usage.inputTokens ?? msg.usage.input_tokens ?? 0;
-        totalOutputTokens += msg.usage.outputTokens ?? msg.usage.output_tokens ?? 0;
-        totalCost += msg.usage.cost ?? 0;
-      }
+      extractUsage(event.message);
     }
   });
 
@@ -144,21 +144,19 @@ export async function executeTask(
   if (!lastAssistantText) {
     const messages = agent.state.messages;
     for (let i = messages.length - 1; i >= 0; i--) {
-      const msg = messages[i] as any;
-      if (msg?.role === "assistant") {
-        if (typeof msg.content === "string") {
-          lastAssistantText = msg.content;
-          break;
-        }
-        if (Array.isArray(msg.content)) {
-          const text = msg.content
-            .filter((c: any) => c.type === "text")
-            .map((c: any) => c.text)
-            .join("");
-          if (text) {
-            lastAssistantText = text;
-            break;
+      const msg = messages[i] as AssistantMessage;
+      if (msg?.role === "assistant" && Array.isArray(msg.content)) {
+        const text = msg.content
+          .filter((c: any) => c.type === "text")
+          .map((c: any) => c.text)
+          .join("");
+        if (text) {
+          lastAssistantText = text;
+          // Also grab usage if we missed it from events
+          if (totalInputTokens === 0 && msg.usage) {
+            extractUsage(msg);
           }
+          break;
         }
       }
     }

@@ -57,11 +57,33 @@ export async function discoverSkills(
       const content = await fs.readFile(filePath, "utf-8");
       const { name, description } = parseFrontmatter(content);
 
-      // Derive category from path: /skills/<category>/...
-      const rel = path.relative(skillsDir, filePath);
-      const category = rel.split(path.sep)[0] ?? "unknown";
+      // Derive category from path segments — look for known category names
+      // Git-sync creates: /skills/roundtable-arsenal/skills/security/opencti-intel/SKILL.md
+      // Or direct: /skills/security/opencti-intel/SKILL.md
+      // Or shared: /skills/roundtable-arsenal/shared/nats-comms/SKILL.md
+      const segments = filePath.split(path.sep);
+      let category = "unknown";
+      for (const seg of segments) {
+        if (allowedCategories.has(seg)) {
+          category = seg;
+          break;
+        }
+      }
 
-      if (!allowedCategories.has(category)) continue;
+      // If no match found, try the directory immediately above SKILL.md's parent
+      if (category === "unknown") {
+        const rel = path.relative(skillsDir, filePath);
+        const parts = rel.split(path.sep);
+        // Walk parts looking for a "skills" dir, take the next segment as category
+        for (let i = 0; i < parts.length - 1; i++) {
+          if (parts[i] === "skills" && i + 1 < parts.length) {
+            category = parts[i + 1]!;
+            break;
+          }
+        }
+      }
+
+      if (category !== "unknown" && !allowedCategories.has(category)) continue;
 
       catalog.push({
         name: name ?? path.basename(path.dirname(filePath)),
