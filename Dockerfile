@@ -14,9 +14,8 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./
 COPY defaults/ ./defaults/
 
-# Non-root
-RUN useradd -m -u 1000 knight
-USER knight
+# Non-root (node:22-slim already has 'node' user at uid 1000)
+USER node
 
 ENV NODE_ENV=production
 EXPOSE 3000
