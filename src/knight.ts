@@ -25,6 +25,9 @@ let cumulativeCostBefore = 0;
 let cumulativeToolCallsBefore = 0;
 let cumulativeTokensBefore = { input: 0, output: 0 };
 
+// Serialize prompt() calls — Pi SDK sessions handle one prompt at a time
+let promptLock: Promise<void> = Promise.resolve();
+
 /**
  * Get or create the persistent AgentSession.
  *
@@ -91,6 +94,12 @@ export async function executeTask(
   config: KnightConfig,
   signal?: AbortSignal,
 ): Promise<TaskResult> {
+  // Serialize — wait for any in-flight prompt to finish
+  const prevLock = promptLock;
+  let releaseLock: () => void;
+  promptLock = new Promise((resolve) => { releaseLock = resolve; });
+  await prevLock;
+
   const sess = await getSession(config);
 
   // Snapshot stats before this task
@@ -117,6 +126,7 @@ export async function executeTask(
     if (signal && abortHandler) {
       signal.removeEventListener("abort", abortHandler);
     }
+    releaseLock!();
   }
 
   // Diff stats to get this task's contribution
