@@ -4,14 +4,17 @@ import {
   type JetStreamClient,
   type JetStreamManager,
   type ConsumerMessages,
-  StringCodec,
+  StringCodec as NatsStringCodec,
   AckPolicy,
   DeliverPolicy,
 } from "nats";
 import { log } from "./logger.js";
 import type { KnightConfig } from "./config.js";
 
-const sc = StringCodec();
+const sc = NatsStringCodec();
+
+// Re-export StringCodec for tools
+export { NatsStringCodec as StringCodec };
 
 export interface ParsedTask {
   task: string;
@@ -26,6 +29,10 @@ let nc: NatsConnection | null = null;
 let js: JetStreamClient | null = null;
 let consumer: ConsumerMessages | null = null;
 let connected = false;
+
+// --- Accessors for custom tools ---
+export function getConnection(): NatsConnection | null { return nc; }
+export function getJetStream(): JetStreamClient | null { return js; }
 
 export function getStatus(): { connected: boolean } {
   return { connected };

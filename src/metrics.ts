@@ -34,13 +34,6 @@ export const tokensTotal = new client.Counter({
   registers: [registry],
 });
 
-export const toolCallsTotal = new client.Counter({
-  name: "pi_knight_tool_calls_total",
-  help: "Total tool calls",
-  labelNames: ["knight", "tool"] as const,
-  registers: [registry],
-});
-
 export const natsConnected = new client.Gauge({
   name: "pi_knight_nats_connected",
   help: "NATS connection status (1=connected, 0=disconnected)",

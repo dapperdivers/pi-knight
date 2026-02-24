@@ -5,12 +5,10 @@ import {
   type AgentSession,
   type SessionStats,
 } from "@mariozechner/pi-coding-agent";
-import { InMemoryAuthStorageBackend, AuthStorage } from "@mariozechner/pi-coding-agent";
-import { SettingsManager } from "@mariozechner/pi-coding-agent";
-import { SessionManager } from "@mariozechner/pi-coding-agent";
-import { ModelRegistry } from "@mariozechner/pi-coding-agent";
+import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { KnightConfig } from "./config.js";
 import { log } from "./logger.js";
+import { natsTools } from "./tools/nats.js";
 
 export interface TaskResult {
   result: string;
@@ -20,95 +18,144 @@ export interface TaskResult {
   toolCalls: number;
 }
 
+// Persistent session — reused across tasks
+let session: AgentSession | null = null;
+let cumulativeCostBefore = 0;
+let cumulativeToolCallsBefore = 0;
+let cumulativeTokensBefore = { input: 0, output: 0 };
+
 /**
- * Execute a task using Pi SDK's AgentSession with full skill support.
+ * Get or create the persistent AgentSession.
  *
- * Uses createAgentSession() which provides:
- * - agentskills.io-compliant skill discovery + prompt injection
- * - Built-in coding tools (read, write, edit, bash, grep, find, ls)
- * - Session stats (tokens, cost) tracking
- * - Auto-compaction for long conversations
- * - Skill reload capability
+ * The session persists across tasks (JSONL on PVC), giving the knight
+ * memory of previous work. Pi SDK handles auto-compaction when context grows.
+ */
+async function getSession(config: KnightConfig): Promise<AgentSession> {
+  if (session) return session;
+
+  const slashIdx = config.knightModel.indexOf("/");
+  const provider = slashIdx > 0 ? config.knightModel.slice(0, slashIdx) : "anthropic";
+  const modelName = slashIdx > 0 ? config.knightModel.slice(slashIdx + 1) : config.knightModel;
+
+  log.info("Creating persistent session", { provider, model: modelName });
+
+  const model = getModel(provider as any, modelName as any);
+
+  const thinkingLevel = (config.thinkingLevel ?? "off") as ThinkingLevel;
+
+  const { session: newSession } = await createAgentSession({
+    model,
+    thinkingLevel,
+    cwd: "/data",
+    agentDir: "/config",
+    customTools: natsTools,
+    resourceLoader: new DefaultResourceLoader({
+      cwd: "/data",
+      agentDir: "/config",
+      additionalSkillPaths: ["/skills"],
+      noExtensions: true,
+      noThemes: true,
+      noPromptTemplates: true,
+      systemPrompt: buildKnightPreamble(config),
+    }),
+  });
+
+  session = newSession;
+
+  // Capture baseline stats (session may have prior history from PVC)
+  const stats = session.getSessionStats();
+  cumulativeCostBefore = stats.cost;
+  cumulativeToolCallsBefore = stats.toolCalls;
+  cumulativeTokensBefore = { input: stats.tokens.input, output: stats.tokens.output };
+
+  log.info("Persistent session created", {
+    sessionId: stats.sessionId,
+    priorMessages: stats.totalMessages,
+    priorCost: stats.cost,
+  });
+
+  return session;
+}
+
+/**
+ * Execute a task on the persistent session.
+ *
+ * Each task is a new prompt() on the same session — the knight
+ * remembers context from previous tasks within the session lifetime.
+ * Pi SDK auto-compacts when context grows too large.
  */
 export async function executeTask(
   task: string,
   config: KnightConfig,
   signal?: AbortSignal,
 ): Promise<TaskResult> {
-  // Parse model: "provider/model-name"
-  const slashIdx = config.knightModel.indexOf("/");
-  const provider = slashIdx > 0 ? config.knightModel.slice(0, slashIdx) : "anthropic";
-  const modelName = slashIdx > 0 ? config.knightModel.slice(slashIdx + 1) : config.knightModel;
+  const sess = await getSession(config);
 
-  log.info("Executing task", { provider, model: modelName, taskLength: task.length });
+  // Snapshot stats before this task
+  const statsBefore = sess.getSessionStats();
+  const costBefore = statsBefore.cost;
+  const toolCallsBefore = statsBefore.toolCalls;
+  const tokensBefore = { input: statsBefore.tokens.input, output: statsBefore.tokens.output };
 
-  const model = getModel(provider as any, modelName as any);
+  log.info("Executing task", { model: config.knightModel, taskLength: task.length });
 
-  // Create session with Pi SDK — it handles skills, tools, system prompt
-  const { session } = await createAgentSession({
-    model,
-    cwd: "/data",              // Knight workspace (PVC)
-    agentDir: "/config",       // ConfigMap personality files (SOUL.md, etc.)
-    resourceLoader: new DefaultResourceLoader({
-      cwd: "/data",
-      agentDir: "/config",
-      additionalSkillPaths: ["/skills"],  // Arsenal repo via git-sync
-      noExtensions: true,
-      noThemes: true,
-      noPromptTemplates: true,
-      systemPrompt: buildKnightPreamble(config),
-    }),
-    thinkingLevel: "off",
-  });
+  // Abort handling — if signal fires, abort the session
+  let abortHandler: (() => void) | undefined;
+  if (signal) {
+    abortHandler = () => {
+      log.warn("Task aborted via signal");
+      sess.abort();
+    };
+    signal.addEventListener("abort", abortHandler, { once: true });
+  }
 
-  // Execute the task
-  await session.prompt(task);
-
-  // Get stats from SDK — no manual tracking needed
-  const stats: SessionStats = session.getSessionStats();
-
-  // Extract last assistant text from agent state
-  const messages = session.agent.state.messages;
-  let resultText = "[No output from agent]";
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const msg = messages[i] as any;
-    if (msg?.role === "assistant" && Array.isArray(msg.content)) {
-      const text = msg.content
-        .filter((c: any) => c.type === "text")
-        .map((c: any) => c.text)
-        .join("");
-      if (text) {
-        resultText = text;
-        break;
-      }
+  try {
+    await sess.prompt(task);
+  } finally {
+    if (signal && abortHandler) {
+      signal.removeEventListener("abort", abortHandler);
     }
   }
 
+  // Diff stats to get this task's contribution
+  const statsAfter = sess.getSessionStats();
+  const taskCost = statsAfter.cost - costBefore;
+  const taskToolCalls = statsAfter.toolCalls - toolCallsBefore;
+  const taskTokens = {
+    input: statsAfter.tokens.input - tokensBefore.input,
+    output: statsAfter.tokens.output - tokensBefore.output,
+  };
+
+  // Extract last assistant text
+  const resultText = sess.getLastAssistantText() ?? "[No output from agent]";
+
   log.info("Task completed", {
-    inputTokens: stats.tokens.input,
-    outputTokens: stats.tokens.output,
-    cost: stats.cost,
-    toolCalls: stats.toolCalls,
+    inputTokens: taskTokens.input,
+    outputTokens: taskTokens.output,
+    cost: taskCost,
+    toolCalls: taskToolCalls,
   });
 
   return {
     result: resultText,
-    cost: stats.cost,
-    tokens: { input: stats.tokens.input, output: stats.tokens.output },
+    cost: taskCost,
+    tokens: taskTokens,
     model: config.knightModel,
-    toolCalls: stats.toolCalls,
+    toolCalls: taskToolCalls,
   };
 }
 
 /**
- * Build a short preamble that identifies the knight.
- * The rest (skills, AGENTS.md, tools) is handled by Pi SDK's resource loader.
+ * Build a short preamble identifying the knight.
+ * Skills, AGENTS.md, personality files are handled by Pi SDK's resource loader.
  */
 function buildKnightPreamble(config: KnightConfig): string {
   return [
     `You are ${config.knightName}, a Knight of the Round Table.`,
     `You receive tasks via NATS JetStream and execute them using your tools and skills.`,
-    `Your results are published back to NATS automatically.`,
+    `Your results are published back to NATS automatically — do NOT use nats_publish for task results.`,
+    `Use nats_request to collaborate with other knights when you need expertise outside your domain.`,
+    `Use nats_publish for out-of-band broadcasts or notifications.`,
     `Stay within your domain. Be thorough but concise.`,
   ].join("\n");
 }

@@ -13,7 +13,7 @@ async function main(): Promise<void> {
   log.info("Pi-Knight starting", {
     model: config.knightModel,
     topics: config.subscribeTopics,
-    skills: config.knightSkills,
+    thinking: config.thinkingLevel,
   });
 
   // Start health/metrics HTTP server
