@@ -8,7 +8,7 @@ import {
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { KnightConfig } from "./config.js";
 import { log } from "./logger.js";
-import { natsTools } from "./tools/nats.js";
+import { natsTools, setKnightName } from "./tools/nats.js";
 import { subagentTools, setParentModel } from "./tools/subagent.js";
 
 export interface TaskResult {
@@ -43,6 +43,7 @@ async function getSession(config: KnightConfig): Promise<AgentSession> {
 
   log.info("Creating persistent session", { provider, model: modelName });
 
+  setKnightName(config.knightName);
   setParentModel(config.knightModel);
   const model = getModel(provider as any, modelName as any);
 

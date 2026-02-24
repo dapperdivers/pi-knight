@@ -12,6 +12,10 @@ import { log } from "../logger.js";
 
 const sc = StringCodec();
 
+// Knight identity — set once at startup for self-echo prevention
+let _knightName = "unknown";
+export function setKnightName(name: string): void { _knightName = name; }
+
 // --- Parameter Schemas ---
 
 const PublishParams = Type.Object({
@@ -103,7 +107,8 @@ export const natsRequestTool: ToolDefinition = {
         task: params.task,
         task_id: taskId,
         domain: params.domain,
-        dispatched_by: "knight", // calling knight
+        from: _knightName.toLowerCase(),
+        dispatched_by: _knightName,
         timestamp: new Date().toISOString(),
         metadata: { timeout_ms: timeoutMs },
       });

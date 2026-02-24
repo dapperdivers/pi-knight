@@ -20,6 +20,7 @@ export interface ParsedTask {
   task: string;
   taskId: string;
   domain?: string;
+  from?: string;
   dispatchedBy?: string;
   timestamp?: string;
   timeoutMs?: number;
@@ -87,7 +88,7 @@ export async function subscribe(config: KnightConfig): Promise<AsyncIterable<Par
     ack_policy: AckPolicy.Explicit,
     deliver_policy: DeliverPolicy.New,
     max_deliver: 1,
-    ack_wait: 30_000_000_000, // 30s in nanoseconds
+    ack_wait: (config.taskTimeoutMs + 60_000) * 1_000_000, // task timeout + 60s buffer, in nanoseconds
   };
 
   try {
@@ -97,10 +98,12 @@ export async function subscribe(config: KnightConfig): Promise<AsyncIterable<Par
     const desiredFilters = [...filterSubjects].sort();
     const currentFilters = [...existingFilters].sort();
 
+    const expectedAckWait = (config.taskTimeoutMs + 60_000) * 1_000_000;
     const needsRecreate =
       JSON.stringify(currentFilters) !== JSON.stringify(desiredFilters) ||
       existing.config.deliver_policy !== DeliverPolicy.New ||
-      existing.config.max_deliver !== 1;
+      existing.config.max_deliver !== 1 ||
+      existing.config.ack_wait !== expectedAckWait;
 
     if (needsRecreate) {
       log.warn("Consumer config mismatch — recreating", {
@@ -109,6 +112,7 @@ export async function subscribe(config: KnightConfig): Promise<AsyncIterable<Par
           filters: JSON.stringify(currentFilters) !== JSON.stringify(desiredFilters),
           deliverPolicy: existing.config.deliver_policy !== DeliverPolicy.New,
           maxDeliver: existing.config.max_deliver !== 1,
+          ackWait: existing.config.ack_wait !== expectedAckWait,
         },
       });
       await jsm.consumers.delete("fleet_a_tasks", durableName);
@@ -146,6 +150,7 @@ export async function subscribe(config: KnightConfig): Promise<AsyncIterable<Par
             task: json.task ?? json.description ?? json.message ?? raw,
             taskId: json.task_id ?? json.taskId ?? subjectTaskId,
             domain: json.domain,
+            from: json.from ?? json.payload?.from,
             dispatchedBy: json.dispatched_by ?? json.dispatchedBy,
             timestamp: json.timestamp,
             timeoutMs: json.metadata?.timeout_ms ?? json.metadata?.timeoutMs,

@@ -129,6 +129,13 @@ async function main(): Promise<void> {
   (async () => {
     for await (const parsed of tasks) {
       if (shuttingDown) break;
+
+      // Skip self-echo — ignore messages published by this knight back to its own topic
+      if (parsed.from && parsed.from.toLowerCase() === config.knightName.toLowerCase()) {
+        log.debug("Skipping self-echo", { taskId: parsed.taskId, from: parsed.from });
+        continue;
+      }
+
       const timeoutMs = parsed.timeoutMs ?? config.taskTimeoutMs;
 
       if (activeCount >= config.maxConcurrentTasks) {
