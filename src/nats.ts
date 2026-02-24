@@ -78,20 +78,37 @@ export async function subscribe(config: KnightConfig): Promise<AsyncIterable<Par
   const durableName = `${config.knightName}-consumer`;
   const filterSubjects = config.subscribeTopics;
 
+  // Reconcile durable consumer — check if existing filter matches desired topics
   try {
-    await jsm.consumers.add("fleet_a_tasks", {
-      durable_name: durableName,
-      filter_subjects: filterSubjects,
-      ack_policy: AckPolicy.Explicit,
-      deliver_policy: DeliverPolicy.All,
-      max_deliver: 1,
-      ack_wait: 30_000_000_000, // 30s in nanoseconds
-    });
-    log.info("Consumer created/bound", { durable: durableName, filters: filterSubjects });
-  } catch (err: unknown) {
-    // Consumer may already exist — that's fine
-    log.info("Consumer bind (may already exist)", { durable: durableName, err: String(err) });
+    const existing = await jsm.consumers.info("fleet_a_tasks", durableName);
+    const existingFilters = existing.config.filter_subjects ?? 
+      (existing.config.filter_subject ? [existing.config.filter_subject] : []);
+    const desired = [...filterSubjects].sort();
+    const current = [...existingFilters].sort();
+    
+    if (JSON.stringify(current) !== JSON.stringify(desired)) {
+      log.warn("Consumer filter mismatch — recreating", { 
+        durable: durableName, current, desired 
+      });
+      await jsm.consumers.delete("fleet_a_tasks", durableName);
+      log.info("Old consumer deleted", { durable: durableName });
+    } else {
+      log.info("Consumer filter matches — reusing", { durable: durableName, filters: current });
+    }
+  } catch {
+    // Consumer doesn't exist yet — will be created below
+    log.info("No existing consumer found, creating new", { durable: durableName });
   }
+
+  await jsm.consumers.add("fleet_a_tasks", {
+    durable_name: durableName,
+    filter_subjects: filterSubjects,
+    ack_policy: AckPolicy.Explicit,
+    deliver_policy: DeliverPolicy.All,
+    max_deliver: 1,
+    ack_wait: 30_000_000_000, // 30s in nanoseconds
+  });
+  log.info("Consumer ready", { durable: durableName, filters: filterSubjects });
 
   consumer = await js.consumers.get("fleet_a_tasks", durableName).then((c) => c.consume());
 
