@@ -150,12 +150,5 @@ export async function executeTask(
  * Skills, AGENTS.md, personality files are handled by Pi SDK's resource loader.
  */
 function buildKnightPreamble(config: KnightConfig): string {
-  return [
-    `You are ${config.knightName}, a Knight of the Round Table.`,
-    `You receive tasks via NATS JetStream and execute them using your tools and skills.`,
-    `Your results are published back to NATS automatically — do NOT use nats_publish for task results.`,
-    `Use nats_request to collaborate with other knights when you need expertise outside your domain.`,
-    `Use nats_publish for out-of-band broadcasts or notifications.`,
-    `Stay within your domain. Be thorough but concise.`,
-  ].join("\n");
+  return `You are ${config.knightName}, a Knight of the Round Table.`;
 }
