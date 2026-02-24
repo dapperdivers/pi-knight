@@ -23,7 +23,8 @@ async function main(): Promise<void> {
   // Discover skills using Pi SDK's built-in agentskills.io loader
   // Retry for git-sync race at startup
   let skillCount = 0;
-  for (let attempt = 0; attempt < 6; attempt++) {
+  const maxSkillAttempts = 20; // ~60s total — allows git-sync + skill-filter to complete
+  for (let attempt = 0; attempt < maxSkillAttempts; attempt++) {
     const { skills, diagnostics } = loadSkills({
       cwd: "/data",
       agentDir: "/config",
@@ -41,7 +42,7 @@ async function main(): Promise<void> {
       }
       break;
     }
-    if (attempt < 5) {
+    if (attempt < maxSkillAttempts - 1) {
       log.info("No skills found, waiting for git-sync...", { attempt: attempt + 1 });
       await new Promise((r) => setTimeout(r, 3000));
     }
