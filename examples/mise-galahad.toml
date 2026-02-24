@@ -1,0 +1,5 @@
+# Galahad — Security & Threat Intel tools
+# Mount via ConfigMap at /config/mise.toml
+
+[tools]
+"pipx:shodan" = "latest"         # Shodan CLI (richer than curl + API)

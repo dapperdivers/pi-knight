@@ -1,0 +1,3 @@
+nmap
+whois
+dnsutils
