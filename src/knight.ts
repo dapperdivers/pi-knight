@@ -9,6 +9,7 @@ import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { KnightConfig } from "./config.js";
 import { log } from "./logger.js";
 import { natsTools } from "./tools/nats.js";
+import { subagentTools, setParentModel } from "./tools/subagent.js";
 
 export interface TaskResult {
   result: string;
@@ -39,6 +40,7 @@ async function getSession(config: KnightConfig): Promise<AgentSession> {
 
   log.info("Creating persistent session", { provider, model: modelName });
 
+  setParentModel(config.knightModel);
   const model = getModel(provider as any, modelName as any);
 
   const thinkingLevel = (config.thinkingLevel ?? "off") as ThinkingLevel;
@@ -48,7 +50,7 @@ async function getSession(config: KnightConfig): Promise<AgentSession> {
     thinkingLevel,
     cwd: "/data",
     agentDir: "/config",
-    customTools: natsTools,
+    customTools: [...natsTools, ...subagentTools],
     resourceLoader: new DefaultResourceLoader({
       cwd: "/data",
       agentDir: "/config",
