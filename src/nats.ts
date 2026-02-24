@@ -163,6 +163,12 @@ export async function subscribe(config: KnightConfig): Promise<AsyncIterable<Par
           };
         }
 
+        // Reject empty/missing task text — don't waste an LLM call on nothing
+        if (!parsed.task || parsed.task.trim().length === 0) {
+          log.warn("Empty task payload — skipping", { taskId: parsed.taskId, subject, rawLength: raw.length });
+          continue;
+        }
+
         log.info("Task received", { taskId: parsed.taskId, subject });
         yield parsed;
       }
