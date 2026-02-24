@@ -54,6 +54,11 @@ export const natsPublishTool: ToolDefinition = {
     const js = getJetStream();
     if (!js) return textResult("Error: NATS not connected");
 
+    if (!params.message || params.message.trim().length === 0) {
+      log.warn("nats_publish: empty message rejected", { subject: params.subject });
+      return textResult("Error: Cannot publish empty message. Provide a non-empty message payload.");
+    }
+
     try {
       await js.publish(params.subject, sc.encode(params.message));
       log.info("nats_publish tool", { subject: params.subject, size: params.message.length });
@@ -85,6 +90,11 @@ export const natsRequestTool: ToolDefinition = {
     const js = getJetStream();
     const nc = getConnection();
     if (!js || !nc) return textResult("Error: NATS not connected");
+
+    if (!params.task || params.task.trim().length === 0) {
+      log.warn("nats_request: empty task rejected", { knight: params.knight, domain: params.domain });
+      return textResult("Error: Cannot send empty task. Provide a non-empty task description.");
+    }
 
     const timeoutMs = params.timeout_ms ?? 600_000; // 10 min default
     const taskId = `${params.knight}-xreq-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
