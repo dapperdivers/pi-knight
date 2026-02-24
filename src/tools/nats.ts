@@ -20,7 +20,7 @@ const PublishParams = Type.Object({
 });
 
 const RequestParams = Type.Object({
-  knight: Type.String({ description: "Target knight name (e.g. percival, galahad)" }),
+  knight: Type.String({ description: "Target knight name" }),
   domain: Type.String({ description: "Task domain (e.g. finance, security, research)" }),
   task: Type.String({ description: "Task description for the target knight" }),
   timeout_ms: Type.Optional(Type.Number({ description: "Timeout in ms (default: 600000 = 10 min)" })),
