@@ -2,9 +2,10 @@
 # mise-init.sh — Install knight-specific tools at pod startup.
 # Runs as an init container before the main pi-knight process.
 #
-# Two sources of knight-specific tools:
-#   1. /config/mise.toml  — declarative CLI tools (mise install)
-#   2. /config/apt.txt    — system packages (apt-get install)
+# Three sources of knight-specific tools:
+#   1. /config/apt.txt    — system packages (apt-get install)
+#   2. /config/pip.txt    — Python packages (pip install)
+#   3. /config/mise.toml  — declarative CLI tools (mise install)
 #
 # Both are optional. If neither exists, the knight runs on baseline tools only.
 
@@ -20,6 +21,14 @@ if [ -f "$APT_FILE" ]; then
   echo "System packages installed."
 fi
 
+# --- pip packages ---
+PIP_FILE="/config/pip.txt"
+if [ -f "$PIP_FILE" ]; then
+  echo "Installing Python packages from $PIP_FILE..."
+  pip install --no-cache-dir -r "$PIP_FILE"
+  echo "Python packages installed."
+fi
+
 # --- mise tools ---
 MISE_TOML="/config/mise.toml"
 if [ -f "$MISE_TOML" ]; then
@@ -33,6 +42,6 @@ if [ -f "$MISE_TOML" ]; then
   ls /data/.mise/shims/ 2>/dev/null || echo "(none)"
 fi
 
-if [ ! -f "$APT_FILE" ] && [ ! -f "$MISE_TOML" ]; then
+if [ ! -f "$APT_FILE" ] && [ ! -f "$PIP_FILE" ] && [ ! -f "$MISE_TOML" ]; then
   echo "No knight-specific tools configured — using image baseline only."
 fi
