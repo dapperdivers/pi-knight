@@ -1,148 +1,106 @@
 # NATS Integration
 
-> Asynchronous task dispatch and result delivery via NATS JetStream.
+> Native NATS JetStream integration for task dispatch and knight-to-knight collaboration.
 
-## Overview
+## Architecture
 
-Knights receive tasks and publish results through NATS JetStream. Tim (orchestrator) publishes tasks to knight-specific subjects; knights consume, execute, and publish results.
-
-## Topology
+Pi-Knight communicates exclusively via NATS JetStream:
 
 ```
-Tim (Orchestrator)                    NATS JetStream                     Knights
-─────────────────                    ───────────────                     ───────
-                                    ┌──────────────┐
-  nats pub ──────────────────────►  │ fleet_a_tasks │  ──────────────►  Galahad
-  fleet-a.tasks.security.*         │   Stream      │                   (security)
-                                    │               │
-  nats pub ──────────────────────►  │  Subjects:    │  ──────────────►  Percival
-  fleet-a.tasks.finance.*          │  fleet-a.     │                   (finance)
-                                    │  tasks.>      │
-  nats pub ──────────────────────►  │               │  ──────────────►  Lancelot
-  fleet-a.tasks.career.*           │               │                   (career)
-                                    └──────────────┘
-                                                                           │
-                                    ┌──────────────┐                       │
-  ◄──────────────────────────────── │fleet_a_results│  ◄───────────────────┘
-  (collect results)                 │   Stream      │   nats pub
-                                    └──────────────┘   fleet-a.results.*
+Tim (orchestrator)
+  │
+  ├─ nats pub fleet-a.tasks.security.<id> ──→ Galahad
+  ├─ nats pub fleet-a.tasks.finance.<id>  ──→ Percival
+  └─ nats pub fleet-a.tasks.career.<id>   ──→ Lancelot
+                                                │
+                                          fleet-a.results.<id>
+                                                │
+                                          ──→ Tim (or any subscriber)
 ```
 
-## Streams
+## Custom Tools
 
-### `fleet_a_tasks`
-- **Subjects:** `fleet-a.tasks.>`
-- **Retention:** WorkQueue (each message consumed once)
-- **Max Deliver:** 1 (no redelivery — immediate ack pattern)
-- **Storage:** File
+NATS is registered as **native Pi SDK tools** — agents call them directly in the tool loop, no shell scripts needed.
 
-### `fleet_a_results`
-- **Subjects:** `fleet-a.results.>`
-- **Retention:** Limits (results kept for collection)
-- **Storage:** File
+### `nats_publish`
 
-## Subject Conventions
+Fire-and-forget message to any NATS subject.
 
-### Task Subjects
 ```
-fleet-a.tasks.<domain>.<task-id>
-```
-- `domain` = knight's area (security, finance, career, infra, home, research, vault)
-- `task-id` = unique identifier (e.g., `security-1771813755-33254`)
-
-### Result Subjects
-```
-fleet-a.results.<task-id>
+Tool: nats_publish
+Params:
+  subject: "fleet-a.tasks.security.my-task"
+  message: '{"task": "Analyze CVE-2026-1234", "task_id": "my-task"}'
 ```
 
-## Consumer Configuration
+Use for: broadcasting events, sending notifications, out-of-band messaging.
 
-Each knight creates a **durable consumer** on the `fleet_a_tasks` stream:
+**Do NOT use for task results** — those are published automatically by the runtime.
+
+### `nats_request`
+
+Send a task to another knight and wait for their response. This is the **branch-and-wait** pattern for cross-knight collaboration.
+
+```
+Tool: nats_request
+Params:
+  knight: "percival"
+  domain: "finance"
+  task: "What is the estimated financial impact of the Conduent breach?"
+  timeout_ms: 600000  (optional, default 10 min)
+```
+
+Flow:
+1. Generates unique task ID
+2. Subscribes to `fleet-a.results.<task-id>` for the response
+3. Publishes task to `fleet-a.tasks.<domain>.<task-id>`
+4. Blocks the calling agent's tool loop until response arrives
+5. Returns the response text — agent continues with that context
+
+Use for: asking another knight a question, delegating subtasks, gathering cross-domain expertise.
+
+## Task Message Format
 
 ```json
 {
-  "durable_name": "<knight-name>-consumer",
-  "filter_subject": "fleet-a.tasks.<domain>.>",
-  "ack_policy": "explicit",
-  "max_deliver": 1,
-  "ack_wait": "30s"
-}
-```
-
-## Message Format
-
-### Task Message (JSON)
-```json
-{
-  "task": "Analyze the latest CVE advisories and produce a threat briefing",
-  "task_id": "security-1771813755-33254",
+  "task": "Analyze the latest npm supply chain attacks",
+  "task_id": "galahad-xreq-1708732800000-abc123",
   "domain": "security",
-  "dispatched_by": "tim",
-  "timestamp": "2026-02-23T15:00:00Z",
+  "dispatched_by": "knight",
+  "timestamp": "2026-02-23T18:00:00.000Z",
   "metadata": {
-    "priority": "normal",
-    "timeout_ms": 1800000
+    "timeout_ms": 600000
   }
 }
 ```
 
-### Result Message (JSON)
+## Result Message Format
+
 ```json
 {
-  "task_id": "security-1771813755-33254",
+  "task_id": "galahad-xreq-1708732800000-abc123",
   "knight": "galahad",
   "success": true,
-  "result": "## Threat Briefing\n\n...",
+  "result": "Analysis text...",
   "duration_ms": 45000,
-  "cost": 0.54,
-  "tokens": {
-    "input": 12000,
-    "output": 8500
-  },
+  "cost": 0.12,
+  "tokens": { "input": 5000, "output": 2000 },
   "model": "anthropic/claude-sonnet-4-5",
-  "timestamp": "2026-02-23T15:00:45Z"
+  "tool_calls": 3,
+  "timestamp": "2026-02-23T18:00:45.000Z"
 }
 ```
 
-## Implementation Requirements
+## JetStream Configuration
 
-### Startup
-1. Connect to NATS server (`nats://nats.database.svc.cluster.local:4222`)
-2. Bind to JetStream
-3. Create/bind durable consumer with filter for knight's domain
-4. Begin message loop
+- **Task stream**: `fleet_a_tasks` — subjects `fleet-a.tasks.>`
+- **Result stream**: `fleet_a_results` — subjects `fleet-a.results.>`
+- **Consumer**: `<knight-name>-consumer` (durable, per-knight)
+- **Ack policy**: Explicit, immediate ack (at-most-once delivery)
+- **Max deliver**: 1 (no redelivery — tasks are acked before execution)
 
-### Task Processing
-1. Receive message from JetStream
-2. **Immediately ack** (at-most-once delivery — prevents redelivery during long tasks)
-3. Parse task payload
-4. Execute via Pi agent loop (with timeout from `metadata.timeout_ms` or default)
-5. Collect result (agent's final output)
-6. Publish result to `fleet-a.results.<task-id>`
-7. Log completion with duration, cost, token counts
+## Session Persistence
 
-### Error Handling
-- Task execution failures → publish error result (success: false, error message in result)
-- NATS connection loss → reconnect with backoff (nats.ws handles this)
-- Agent timeout → AbortController kills the task, publishes timeout error
+Knights maintain **persistent sessions** across tasks. When a knight processes multiple tasks, it retains context from previous work. Pi SDK handles auto-compaction when context grows too large.
 
-### Health Check
-- NATS connection status exposed via HTTP health endpoint
-- Periodic ping to verify JetStream availability
-- Consumer lag monitoring (how many pending messages)
-
-## Environment Variables
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `NATS_URL` | NATS server URL | `nats://nats.database.svc.cluster.local:4222` |
-| `SUBSCRIBE_TOPICS` | Comma-separated subjects to consume | Required |
-| `KNIGHT_NAME` | Knight identifier for result publishing | Required |
-| `TASK_TIMEOUT_MS` | Default task timeout | `1800000` (30 min) |
-
-## Connection Details
-
-- **Server:** `nats.database.svc.cluster.local:4222`
-- **Protocol:** NATS (not WebSocket — pod-to-pod within cluster)
-- **Auth:** None (cluster-internal, network policy restricted)
-- **Client:** `nats` npm package (not `nats.ws` — that's for browser/external)
+Session data persists to `/data` (PVC) as JSONL files, surviving pod restarts.

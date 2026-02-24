@@ -4,7 +4,7 @@
 
 ## Principle
 
-Every knight runs the **same Docker image**. Identity, personality, capabilities, and model selection are injected via Kubernetes ConfigMaps, Secrets, and environment variables.
+Every knight runs the **same Docker image**. Identity, personality, capabilities, and model selection are injected via Kubernetes ConfigMaps, Secrets, and environment variables. Skill filtering is managed at the Helm/git-sync layer — the runtime loads all skills from mounted paths.
 
 ## Configuration Layers
 
@@ -12,7 +12,7 @@ Every knight runs the **same Docker image**. Identity, personality, capabilities
 ┌─────────────────────────────────┐
 │  Environment Variables           │  Model, timeouts, NATS config
 ├─────────────────────────────────┤
-│  ConfigMap (personality files)   │  SOUL.md, IDENTITY.md, TOOLS.md
+│  ConfigMap (personality files)   │  SOUL.md, IDENTITY.md
 ├─────────────────────────────────┤
 │  ExternalSecret (credentials)    │  API keys, tokens
 ├─────────────────────────────────┤
@@ -22,7 +22,7 @@ Every knight runs the **same Docker image**. Identity, personality, capabilities
 
 ### File Overlay Priority
 1. **PVC** (`/data`) — Knight's own edits (highest priority, persists across restarts)
-2. **ConfigMap** (`/config`) — Injected personality files (SOUL.md, IDENTITY.md, TOOLS.md)
+2. **ConfigMap** (`/config`) — Injected personality files (SOUL.md, IDENTITY.md)
 3. **Image Defaults** (`/app/defaults`) — Base operational contract (fallback)
 
 Pi SDK's `DefaultResourceLoader` handles this natively:
@@ -38,92 +38,61 @@ Knights can evolve their own files over time — ConfigMap seeds the initial sta
 | Variable | Description | Example |
 |----------|-------------|---------|
 | `KNIGHT_NAME` | Knight identifier | `galahad` |
-| `SUBSCRIBE_TOPICS` | NATS subject filter | `fleet-a.tasks.security.>` |
-| `KNIGHT_SKILLS` | Skill categories to load | `security` |
+| `SUBSCRIBE_TOPICS` | NATS subject filter (comma-separated) | `fleet-a.tasks.security.>` |
 
 ### LLM Configuration
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `KNIGHT_MODEL` | LLM provider/model | `anthropic/claude-sonnet-4-5` |
+| `KNIGHT_THINKING` | Thinking level (off/minimal/low/medium/high) | `off` |
 | `ANTHROPIC_API_KEY` | Anthropic API key | From ExternalSecret |
 | `OPENAI_API_KEY` | OpenAI API key (if using GPT models) | From ExternalSecret |
 | `GEMINI_API_KEY` | Google API key (if using Gemini) | From ExternalSecret |
-| `KNIGHT_THINKING` | Enable extended thinking | `false` |
-| `KNIGHT_EFFORT` | Effort level (low/medium/high) | `medium` |
 
 ### NATS Configuration
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `NATS_URL` | NATS server URL | `nats://nats.database.svc.cluster.local:4222` |
-| `TASK_TIMEOUT_MS` | Default task timeout | `1800000` |
+| `TASK_TIMEOUT_MS` | Default task timeout (ms) | `1800000` (30 min) |
 | `MAX_CONCURRENT_TASKS` | Max parallel task execution | `2` |
 
 ### Observability
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `METRICS_PORT` | Health/metrics HTTP port | `3000` |
-| `LOG_LEVEL` | Log verbosity | `info` |
-| `ENABLE_METRICS` | Prometheus metrics | `true` |
+| `LOG_LEVEL` | Log verbosity (debug/info/warn/error) | `info` |
 
-## Knight Configurations
+## Skill Filtering
 
-### Galahad (Security)
-```yaml
-KNIGHT_NAME: galahad
-KNIGHT_MODEL: anthropic/claude-sonnet-4-5
-SUBSCRIBE_TOPICS: fleet-a.tasks.security.>
-KNIGHT_SKILLS: security
-TASK_TIMEOUT_MS: "1800000"    # 30 min — deep analysis
-```
+Skill filtering is managed at the **deployment layer**, not in pi-knight code:
 
-### Percival (Finance)
-```yaml
-KNIGHT_NAME: percival
-KNIGHT_MODEL: anthropic/claude-haiku-3-5   # Cheaper for structured tasks
-SUBSCRIBE_TOPICS: fleet-a.tasks.finance.>
-KNIGHT_SKILLS: finance
-```
+- **git-sync** mounts the arsenal repo to `/skills`
+- **Helm values** control which skill directories are synced per knight
+- Pi SDK's `loadSkills()` loads everything from `/skills` — no runtime filtering
 
-### Kay (Research)
-```yaml
-KNIGHT_NAME: kay
-KNIGHT_MODEL: google/gemini-2.5-pro        # Huge context for research
-SUBSCRIBE_TOPICS: fleet-a.tasks.research.>,fleet-a.tasks.intel.>
-KNIGHT_SKILLS: research,intel
-```
+This keeps the runtime simple and lets GitOps control what each knight can do.
 
-### Lancelot (Career)
-```yaml
-KNIGHT_NAME: lancelot
-KNIGHT_MODEL: anthropic/claude-sonnet-4-5
-SUBSCRIBE_TOPICS: fleet-a.tasks.career.>
-KNIGHT_SKILLS: career
-```
+## Native Tools
 
-### Tristan (Infrastructure)
-```yaml
-KNIGHT_NAME: tristan
-KNIGHT_MODEL: anthropic/claude-sonnet-4-5
-SUBSCRIBE_TOPICS: fleet-a.tasks.infra.>
-KNIGHT_SKILLS: infra
-```
+Pi-knight registers custom tools alongside Pi SDK's built-in coding tools:
 
-### Bedivere (Household)
-```yaml
-KNIGHT_NAME: bedivere
-KNIGHT_MODEL: openai/gpt-4o               # Cost-effective for life admin
-SUBSCRIBE_TOPICS: fleet-a.tasks.home.>
-KNIGHT_SKILLS: home
-```
+| Tool | Description | Source |
+|------|-------------|--------|
+| `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls` | File I/O and shell | Pi SDK built-in |
+| `nats_publish` | Fire-and-forget NATS message | pi-knight custom |
+| `nats_request` | Cross-knight collaboration (send + wait) | pi-knight custom |
 
-### Patsy (Vault Curator)
-```yaml
-KNIGHT_NAME: patsy
-KNIGHT_MODEL: anthropic/claude-haiku-3-5   # Metadata tasks don't need Sonnet
-SUBSCRIBE_TOPICS: fleet-a.tasks.vault.>
-KNIGHT_SKILLS: vault
-# Special: full vault write access (unlike other knights)
-```
+## Session Persistence
+
+Knights maintain persistent sessions across tasks:
+- Session state stored as JSONL on PVC (`/data`)
+- Pi SDK auto-compacts when context grows too large
+- Knights remember previous tasks within their session lifetime
+- Survives pod restarts (PVC-backed)
+
+## Thinking Level
+
+`KNIGHT_THINKING` can also be overridden per-task by the dispatching agent via the NATS message metadata. This lets Tim request deeper reasoning for complex tasks without changing the knight's default.
 
 ## ConfigMap Structure
 
@@ -142,10 +111,6 @@ data:
   IDENTITY.md: |
     - Name: Sir Galahad
     - Domain: Security & Threat Intelligence
-    ...
-  TOOLS.md: |
-    ## OpenCTI
-    - Endpoint: http://opencti-server.security.svc:8080
     ...
 ```
 
@@ -168,9 +133,6 @@ spec:
   dataFrom:
     - find:
         name:
-          regexp: "^KNIGHT_.*"
-    - find:
-        name:
           regexp: "^ANTHROPIC_.*"
 ```
 
@@ -182,8 +144,8 @@ spec:
 | Kay | Gemini 2.5 Pro | Research benefits from 1M+ token context |
 | Lancelot | Claude Sonnet 4.5 | Career advice needs nuanced writing |
 | Tristan | Claude Sonnet 4.5 | Infrastructure requires precise technical output |
-| Percival | Claude Haiku 3.5 | Financial categorization is structured, doesn't need Sonnet |
-| Bedivere | GPT-4o | Household tasks are straightforward, cost-optimize |
+| Percival | Claude Haiku 3.5 | Financial categorization is structured |
+| Bedivere | GPT-4o | Household tasks are straightforward |
 | Patsy | Claude Haiku 3.5 | Vault metadata is mechanical, high volume |
 
 These are starting points — adjust based on observed task quality and cost.
