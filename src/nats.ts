@@ -78,36 +78,50 @@ export async function subscribe(config: KnightConfig): Promise<AsyncIterable<Par
   const durableName = `${config.knightName}-consumer`;
   const filterSubjects = config.subscribeTopics;
 
-  // Reconcile durable consumer — check if existing filter matches desired topics
-  try {
-    const existing = await jsm.consumers.info("fleet_a_tasks", durableName);
-    const existingFilters = existing.config.filter_subjects ?? 
-      (existing.config.filter_subject ? [existing.config.filter_subject] : []);
-    const desired = [...filterSubjects].sort();
-    const current = [...existingFilters].sort();
-    
-    if (JSON.stringify(current) !== JSON.stringify(desired)) {
-      log.warn("Consumer filter mismatch — recreating", { 
-        durable: durableName, current, desired 
-      });
-      await jsm.consumers.delete("fleet_a_tasks", durableName);
-      log.info("Old consumer deleted", { durable: durableName });
-    } else {
-      log.info("Consumer filter matches — reusing", { durable: durableName, filters: current });
-    }
-  } catch {
-    // Consumer doesn't exist yet — will be created below
-    log.info("No existing consumer found, creating new", { durable: durableName });
-  }
-
-  await jsm.consumers.add("fleet_a_tasks", {
+  // Reconcile durable consumer — delete and recreate if config differs.
+  // NATS does not allow updating deliver_policy or ack_policy on existing consumers,
+  // so we compare the full config and recreate if anything changed.
+  const desiredConfig = {
     durable_name: durableName,
     filter_subjects: filterSubjects,
     ack_policy: AckPolicy.Explicit,
     deliver_policy: DeliverPolicy.New,
     max_deliver: 1,
     ack_wait: 30_000_000_000, // 30s in nanoseconds
-  });
+  };
+
+  try {
+    const existing = await jsm.consumers.info("fleet_a_tasks", durableName);
+    const existingFilters = existing.config.filter_subjects ??
+      (existing.config.filter_subject ? [existing.config.filter_subject] : []);
+    const desiredFilters = [...filterSubjects].sort();
+    const currentFilters = [...existingFilters].sort();
+
+    const needsRecreate =
+      JSON.stringify(currentFilters) !== JSON.stringify(desiredFilters) ||
+      existing.config.deliver_policy !== DeliverPolicy.New ||
+      existing.config.max_deliver !== 1;
+
+    if (needsRecreate) {
+      log.warn("Consumer config mismatch — recreating", {
+        durable: durableName,
+        reason: {
+          filters: JSON.stringify(currentFilters) !== JSON.stringify(desiredFilters),
+          deliverPolicy: existing.config.deliver_policy !== DeliverPolicy.New,
+          maxDeliver: existing.config.max_deliver !== 1,
+        },
+      });
+      await jsm.consumers.delete("fleet_a_tasks", durableName);
+      log.info("Old consumer deleted", { durable: durableName });
+    } else {
+      log.info("Consumer config matches — reusing", { durable: durableName, filters: currentFilters });
+    }
+  } catch {
+    // Consumer doesn't exist yet — will be created below
+    log.info("No existing consumer found, creating new", { durable: durableName });
+  }
+
+  await jsm.consumers.add("fleet_a_tasks", desiredConfig);
   log.info("Consumer ready", { durable: durableName, filters: filterSubjects });
 
   consumer = await js.consumers.get("fleet_a_tasks", durableName).then((c) => c.consume());
