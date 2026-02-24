@@ -3,8 +3,8 @@
 
 [tools]
 # ripgrep — required by Pi SDK's grep tool
-"ubi:BurntSushi/ripgrep" = "latest"
+ripgrep = "latest"
 # Python — many arsenal skill scripts depend on it
 python = "3.12"
 # yq — YAML processing for skill scripts
-"ubi:mikefarah/yq" = "latest"
+"github:mikefarah/yq" = "latest"

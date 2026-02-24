@@ -4,8 +4,8 @@
 [tools]
 # Kubernetes
 kubectl = "latest"
-"ubi:helm/helm" = "latest"
-"ubi:fluxcd/flux2" = "latest"
+"github:helm/helm" = "latest"
+"github:fluxcd/flux2" = "latest"
 
 # Observability
-"ubi:stern/stern" = "latest"     # Multi-pod log tailing
+"github:stern/stern" = "latest"     # Multi-pod log tailing
