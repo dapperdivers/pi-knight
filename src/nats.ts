@@ -104,7 +104,7 @@ export async function subscribe(config: KnightConfig): Promise<AsyncIterable<Par
     durable_name: durableName,
     filter_subjects: filterSubjects,
     ack_policy: AckPolicy.Explicit,
-    deliver_policy: DeliverPolicy.All,
+    deliver_policy: DeliverPolicy.New,
     max_deliver: 1,
     ack_wait: 30_000_000_000, // 30s in nanoseconds
   });
@@ -129,12 +129,12 @@ export async function subscribe(config: KnightConfig): Promise<AsyncIterable<Par
         try {
           const json = JSON.parse(raw);
           parsed = {
-            task: json.task ?? raw,
-            taskId: json.task_id ?? subjectTaskId,
+            task: json.task ?? json.description ?? json.message ?? raw,
+            taskId: json.task_id ?? json.taskId ?? subjectTaskId,
             domain: json.domain,
-            dispatchedBy: json.dispatched_by,
+            dispatchedBy: json.dispatched_by ?? json.dispatchedBy,
             timestamp: json.timestamp,
-            timeoutMs: json.metadata?.timeout_ms,
+            timeoutMs: json.metadata?.timeout_ms ?? json.metadata?.timeoutMs,
           };
         } catch {
           // Not JSON — treat entire payload as task text
