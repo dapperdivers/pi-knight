@@ -67,12 +67,16 @@ if [ -f "$APT_FILE" ]; then
     echo "  Persisted: sslscan data files"
   fi
 
-  # Copy perl for tools that need it (nikto, sslscan)
-  if [ -d /usr/share/perl ] && [ ! -d /data/share/perl ]; then
-    mkdir -p /data/share
-    cp -a /usr/share/perl /data/share/perl
-    cp -a /usr/lib/x86_64-linux-gnu/perl 2>/dev/null /data/lib/ || true
-  fi
+  # Copy perl modules for tools that need them (nikto needs JSON, XML::Writer)
+  mkdir -p /data/share/perl5
+  # Copy all perl module directories to a single persistent location
+  for pdir in /usr/share/perl5 /usr/share/perl/5.36 /usr/share/perl/5.36.0 \
+              /usr/lib/x86_64-linux-gnu/perl5/5.36 /usr/lib/x86_64-linux-gnu/perl/5.36; do
+    if [ -d "$pdir" ]; then
+      cp -a "$pdir"/* /data/share/perl5/ 2>/dev/null || true
+    fi
+  done
+  echo "  Persisted: perl modules"
 
   echo "Persisted $(ls "$PERSIST_BIN" | wc -l) binaries to $PERSIST_BIN"
 fi

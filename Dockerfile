@@ -40,6 +40,7 @@ ENV NODE_ENV=production \
     MISE_DATA_DIR=/data/.mise \
     MISE_YES=1 \
     NMAP_DATADIR=/data/share/nmap \
+    PERL5LIB=/data/share/perl5 \
     PATH="/data/bin:/data/.mise/shims:/app/.mise/shims:${PATH}" \
     LD_LIBRARY_PATH="/data/lib:${LD_LIBRARY_PATH}"
 
