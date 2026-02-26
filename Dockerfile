@@ -39,7 +39,9 @@ COPY scripts/ ./scripts/
 ENV NODE_ENV=production \
     MISE_DATA_DIR=/data/.mise \
     MISE_YES=1 \
-    PATH="/data/.mise/shims:/app/.mise/shims:${PATH}"
+    NMAP_DATADIR=/data/share/nmap \
+    PATH="/data/bin:/data/.mise/shims:/app/.mise/shims:${PATH}" \
+    LD_LIBRARY_PATH="/data/lib:${LD_LIBRARY_PATH}"
 
 # Non-root (node:22-slim already has 'node' user at uid 1000)
 USER node
