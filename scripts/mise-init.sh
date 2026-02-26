@@ -77,6 +77,57 @@ if [ -f "$APT_FILE" ]; then
   echo "Persisted $(ls "$PERSIST_BIN" | wc -l) binaries to $PERSIST_BIN"
 fi
 
+# --- Static binary downloads (bins.txt) ---
+# Format: one URL per line, downloaded to /data/bin/
+# Supports .zip archives (extracts all executables)
+BINS_FILE="/config/bins.txt"
+if [ -f "$BINS_FILE" ]; then
+  echo "Downloading static binaries from $BINS_FILE..."
+  mkdir -p "$PERSIST_BIN"
+  while IFS= read -r url || [ -n "$url" ]; do
+    url=$(echo "$url" | sed 's/#.*//' | xargs)  # strip comments and whitespace
+    [ -z "$url" ] && continue
+    fname=$(basename "$url")
+    echo "  Downloading: $fname"
+    TMP_DL="/tmp/bin-dl-$fname"
+    if curl -sL "$url" -o "$TMP_DL" 2>/dev/null && [ -s "$TMP_DL" ]; then
+      case "$fname" in
+        *.zip)
+          if command -v unzip &>/dev/null; then
+            unzip -o -q "$TMP_DL" -d /tmp/bin-extract/ 2>/dev/null
+          else
+            python3 -c "import zipfile; zipfile.ZipFile('$TMP_DL').extractall('/tmp/bin-extract/')" 2>/dev/null
+          fi
+          # Copy any executables found
+          find /tmp/bin-extract/ -type f -executable -exec cp {} "$PERSIST_BIN/" \;
+          # Also make common binaries executable even if flag not set
+          find /tmp/bin-extract/ -type f -name "nuclei" -o -name "httpx" -o -name "subfinder" | while read f; do
+            chmod +x "$f"
+            cp "$f" "$PERSIST_BIN/"
+          done
+          rm -rf /tmp/bin-extract/ "$TMP_DL"
+          echo "  Extracted archive: $fname"
+          ;;
+        *.tar.gz|*.tgz)
+          mkdir -p /tmp/bin-extract/
+          tar xzf "$TMP_DL" -C /tmp/bin-extract/ 2>/dev/null
+          find /tmp/bin-extract/ -type f -executable -exec cp {} "$PERSIST_BIN/" \;
+          rm -rf /tmp/bin-extract/ "$TMP_DL"
+          echo "  Extracted archive: $fname"
+          ;;
+        *)
+          cp "$TMP_DL" "$PERSIST_BIN/$fname"
+          chmod +x "$PERSIST_BIN/$fname"
+          rm -f "$TMP_DL"
+          echo "  Installed: $fname"
+          ;;
+      esac
+    else
+      echo "  WARN: Failed to download $url"
+    fi
+  done < "$BINS_FILE"
+fi
+
 # --- pip packages ---
 PIP_FILE="/config/pip.txt"
 if [ -f "$PIP_FILE" ]; then
