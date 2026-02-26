@@ -153,6 +153,13 @@ if [ -f "$MISE_TOML" ]; then
   ls /data/.mise/shims/ 2>/dev/null || echo "(none)"
 fi
 
-if [ ! -f "$APT_FILE" ] && [ ! -f "$PIP_FILE" ] && [ ! -f "$MISE_TOML" ]; then
+# --- Nix flake ---
+FLAKE_FILE="/config/flake.nix"
+if [ -f "$FLAKE_FILE" ]; then
+  echo "Found flake.nix — running Nix init..."
+  /app/scripts/nix-init.sh
+fi
+
+if [ ! -f "$APT_FILE" ] && [ ! -f "$PIP_FILE" ] && [ ! -f "$MISE_TOML" ] && [ ! -f "$FLAKE_FILE" ]; then
   echo "No knight-specific tools configured — using image baseline only."
 fi

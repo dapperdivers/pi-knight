@@ -15,7 +15,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     git \
     jq \
+    xz-utils \
     && rm -rf /var/lib/apt/lists/*
+
+# Install Nix (single-user, no daemon) — declarative tool management for knights
+# The init container (running as root) sources the nix profile and runs nix build.
+# Built tools go to /nix/store which is readable by the app container.
+# No copying needed — everything lives at the correct /nix/store paths.
+RUN curl -L https://nixos.org/nix/install | sh -s -- --no-daemon
+ENV NIX_PROFILE_SCRIPT="/root/.nix-profile/etc/profile.d/nix.sh" \
+    NIX_CONFIG="experimental-features = nix-command flakes"
 
 # Install mise — declarative tool manager (baseline: rg, python, yq)
 RUN curl -fsSL https://mise.run | MISE_INSTALL_PATH=/usr/local/bin/mise sh
