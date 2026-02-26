@@ -87,7 +87,11 @@ echo "  Store path: $STORE_PATH"
 
 # Create the env profile — symlinks in bin/ point to /nix/store/... paths
 # which are directly accessible (same filesystem, no copying needed)
-rm -rf "$NIX_ENV"
+# Note: old nix-env may have root-owned files from previous 3-container approach
+rm -rf "$NIX_ENV" 2>/dev/null || {
+  echo "  Warning: old nix-env has root files, moving aside..."
+  mv "$NIX_ENV" "${NIX_ENV}.old" 2>/dev/null || true
+}
 cp -a "$STORE_PATH" "$NIX_ENV"
 
 # Save hash for caching
