@@ -18,16 +18,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Nix (single-user, no daemon) — declarative tool management for knights
-# Pre-create /nix, disable build-users-group (no nixbld group in slim image)
+# ── Nix (single-user, no daemon) ─────────────────────────────────
+# Nix is the primary tool manager for knights. Each knight declares
+# its tools via a flake.nix in its ConfigMap.
+#
+# Key: chown /nix to uid 1000 (node user) so init containers running
+# as non-root can use nix build without permission errors.
 RUN mkdir -m 0755 /nix \
     && mkdir -p /etc/nix \
     && echo "build-users-group =" > /etc/nix/nix.conf \
     && echo "experimental-features = nix-command flakes" >> /etc/nix/nix.conf \
-    && curl -L https://nixos.org/nix/install | sh -s -- --no-daemon
-ENV NIX_PROFILE_SCRIPT="/root/.nix-profile/etc/profile.d/nix.sh"
+    && curl -L https://nixos.org/nix/install | sh -s -- --no-daemon \
+    && chown -R 1000:1000 /nix
+ENV NIX_CONFIG="experimental-features = nix-command flakes"
 
-# Install mise — declarative tool manager (baseline: rg, python, yq)
+# ── Mise (baseline tools: rg, python, yq) ────────────────────────
+# Mise runs AFTER Nix in the tool hierarchy. Provides lightweight
+# baseline tools that all knights share regardless of their flake.
 RUN curl -fsSL https://mise.run | MISE_INSTALL_PATH=/usr/local/bin/mise sh
 COPY mise.toml /app/mise.toml
 ENV MISE_DATA_DIR=/app/.mise \
@@ -42,10 +49,11 @@ COPY defaults/ ./defaults/
 COPY scripts/ ./scripts/
 
 # Runtime config
-# /data/nix-env/bin — Nix-managed knight tools (from flake.nix via ConfigMap)
-# /data/bin — legacy persistent binaries (fallback for non-Nix knights)
-# /data/.mise/shims — mise-managed tools (knight-specific)
-# /app/.mise/shims — baseline tools (rg, python, yq)
+# Tool priority (left to right = highest to lowest):
+#   1. /data/nix-env/bin — Nix flake tools (knight-specific)
+#   2. /data/bin — legacy persistent binaries (fallback)
+#   3. /data/.mise/shims — mise knight-specific tools
+#   4. /app/.mise/shims — mise baseline tools (rg, python, yq)
 ENV NODE_ENV=production \
     MISE_DATA_DIR=/data/.mise \
     MISE_YES=1 \

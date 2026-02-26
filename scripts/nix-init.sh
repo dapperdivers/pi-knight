@@ -24,30 +24,23 @@ if [ ! -f "$FLAKE_FILE" ]; then
   exit 0
 fi
 
-# Source the Nix profile — try multiple locations
-NIX_SH=""
+# Add Nix to PATH — the single-user install puts binaries in a profile
+# Try multiple locations (root install vs user install vs default profile)
 for candidate in \
-  "${NIX_PROFILE_SCRIPT:-}" \
-  /root/.nix-profile/etc/profile.d/nix.sh \
-  /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh \
-  /nix/var/nix/profiles/default/etc/profile.d/nix.sh \
-  "$HOME/.nix-profile/etc/profile.d/nix.sh"; do
-  if [ -f "$candidate" ]; then
-    NIX_SH="$candidate"
+  /nix/var/nix/profiles/default/bin \
+  /root/.nix-profile/bin \
+  "$HOME/.nix-profile/bin"; do
+  if [ -d "$candidate" ] && [ -x "$candidate/nix" ]; then
+    export PATH="$candidate:$PATH"
+    echo "Nix found at: $candidate ($(nix --version))"
     break
   fi
 done
 
-if [ -n "$NIX_SH" ]; then
-  echo "Sourcing Nix profile: $NIX_SH"
-  . "$NIX_SH"
-elif command -v nix >/dev/null 2>&1; then
-  echo "Nix found on PATH (no profile script needed)"
-else
-  echo "ERROR: Nix not found — searched profiles and PATH"
-  echo "Searched: /root/.nix-profile, /nix/var/nix/profiles/default, \$HOME/.nix-profile"
-  find / -name "nix.sh" -maxdepth 6 2>/dev/null || true
-  find / -name "nix" -type f -maxdepth 5 2>/dev/null | head -5 || true
+if ! command -v nix >/dev/null 2>&1; then
+  echo "ERROR: Nix not found"
+  echo "Searched: /nix/var/nix/profiles/default/bin, /root/.nix-profile/bin, \$HOME/.nix-profile/bin"
+  ls -la /nix/var/nix/profiles/ 2>/dev/null || echo "No profiles dir"
   exit 1
 fi
 
