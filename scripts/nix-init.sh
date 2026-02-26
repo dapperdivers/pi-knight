@@ -73,13 +73,20 @@ mkdir -p "$FLAKE_DIR"
 cp "$FLAKE_FILE" "$FLAKE_DIR/flake.nix"
 cd "$FLAKE_DIR"
 
-# Build — stdout is the store path, stderr is progress
-STORE_PATH=$(nix build ".#default" --no-link --print-out-paths 2>/tmp/nix-build-log.txt)
-BUILD_EXIT=$?
-
-if [ $BUILD_EXIT -ne 0 ] || [ -z "$STORE_PATH" ]; then
+# Build — capture both stdout and stderr for diagnostics
+echo "  Running: nix build .#default --no-link --print-out-paths"
+echo "  Flake dir contents: $(ls "$FLAKE_DIR")"
+echo "  Nix version: $(nix --version 2>&1 || echo 'nix not found on PATH')"
+if ! STORE_PATH=$(nix build ".#default" --no-link --print-out-paths 2>&1); then
   echo "ERROR: Nix build failed:"
-  cat /tmp/nix-build-log.txt
+  echo "$STORE_PATH"
+  exit 1
+fi
+
+# nix build output might have progress on stderr mixed in — last line is the store path
+STORE_PATH=$(echo "$STORE_PATH" | tail -1)
+if [ -z "$STORE_PATH" ] || [ ! -d "$STORE_PATH" ]; then
+  echo "ERROR: Nix build produced invalid store path: '$STORE_PATH'"
   exit 1
 fi
 
