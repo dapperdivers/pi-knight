@@ -26,7 +26,6 @@ if [ -d "$NIX_ENV" ] && ! rm -rf "$NIX_ENV" 2>/dev/null; then
   echo "Cleaning up root-owned legacy nix-env..."
   mv "$NIX_ENV" "${NIX_ENV}.old.$$" 2>/dev/null || true
 fi
-rm -rf /data/nix-store 2>/dev/null || true
 rm -f /data/.nix-flake-hash.old 2>/dev/null || true
 
 if [ ! -f "$FLAKE_FILE" ]; then
