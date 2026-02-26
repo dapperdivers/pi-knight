@@ -17,11 +17,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     jq \
     && rm -rf /var/lib/apt/lists/*
 
-# Install mise — declarative tool manager
-# Tools are managed via mise.toml (baseline baked here, knight-specific via ConfigMap)
+# Install mise — declarative tool manager (baseline: rg, python, yq)
 RUN curl -fsSL https://mise.run | MISE_INSTALL_PATH=/usr/local/bin/mise sh
-
-# Bake baseline tools into the image (rg, python, yq)
 COPY mise.toml /app/mise.toml
 ENV MISE_DATA_DIR=/app/.mise \
     MISE_CONFIG_FILE=/app/mise.toml \
@@ -34,15 +31,15 @@ COPY --from=builder /app/package.json ./
 COPY defaults/ ./defaults/
 COPY scripts/ ./scripts/
 
-# Runtime mise config — points to /data for knight self-provisioning
-# Baseline shims from /app/.mise, knight-specific from /data/.mise
+# Runtime config
+# /data/nix-env/bin — Nix-managed knight tools (from flake.nix via ConfigMap)
+# /data/bin — legacy persistent binaries (fallback for non-Nix knights)
+# /data/.mise/shims — mise-managed tools (knight-specific)
+# /app/.mise/shims — baseline tools (rg, python, yq)
 ENV NODE_ENV=production \
     MISE_DATA_DIR=/data/.mise \
     MISE_YES=1 \
-    NMAP_DATADIR=/data/share/nmap \
-    PERL5LIB=/data/share/perl5 \
-    PATH="/data/bin:/data/.mise/shims:/app/.mise/shims:${PATH}" \
-    LD_LIBRARY_PATH="/data/lib:${LD_LIBRARY_PATH}"
+    PATH="/data/nix-env/bin:/data/bin:/data/.mise/shims:/app/.mise/shims:${PATH}"
 
 # Non-root (node:22-slim already has 'node' user at uid 1000)
 USER node
