@@ -113,10 +113,14 @@ EOF
   log "  Nix installed ✓ ($(du -sh /nix/store | cut -f1))"
 }
 
-if [ ! -f /nix/.bootstrapped ]; then
-  bootstrap_nix
+if [ -d /nix ] && [ -w /nix ]; then
+  if [ ! -f /nix/.bootstrapped ]; then
+    bootstrap_nix
+  else
+    log "Phase 2: Nix already bootstrapped ✓"
+  fi
 else
-  log "Phase 2: Nix already bootstrapped ✓"
+  log "Phase 2: No /nix mount — skipping Nix bootstrap"
 fi
 
 # Source Nix into PATH
