@@ -19,10 +19,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Nix (single-user, no daemon) — declarative tool management for knights
-# The init container (running as root) sources the nix profile and runs nix build.
-# Built tools go to /nix/store which is readable by the app container.
-# No copying needed — everything lives at the correct /nix/store paths.
-RUN curl -L https://nixos.org/nix/install | sh -s -- --no-daemon
+# Pre-create /nix so the installer doesn't need sudo
+RUN mkdir -m 0755 /nix && chown root /nix \
+    && curl -L https://nixos.org/nix/install | sh -s -- --no-daemon
 ENV NIX_PROFILE_SCRIPT="/root/.nix-profile/etc/profile.d/nix.sh" \
     NIX_CONFIG="experimental-features = nix-command flakes"
 
