@@ -19,6 +19,16 @@ FLAKE_FILE="/config/flake.nix"
 NIX_ENV="/data/nix-env"
 HASH_FILE="/data/.nix-flake-hash"
 
+# ── Legacy cleanup ──
+# Remove root-owned files from previous 3-container Nix approach.
+# These can't be deleted by uid 1000 with rm, but mv to a .old suffix works.
+if [ -d "$NIX_ENV" ] && ! rm -rf "$NIX_ENV" 2>/dev/null; then
+  echo "Cleaning up root-owned legacy nix-env..."
+  mv "$NIX_ENV" "${NIX_ENV}.old.$$" 2>/dev/null || true
+fi
+rm -rf /data/nix-store 2>/dev/null || true
+rm -f /data/.nix-flake-hash.old 2>/dev/null || true
+
 if [ ! -f "$FLAKE_FILE" ]; then
   echo "No flake.nix at $FLAKE_FILE — skipping Nix init."
   exit 0
