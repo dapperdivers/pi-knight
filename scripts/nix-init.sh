@@ -24,12 +24,30 @@ if [ ! -f "$FLAKE_FILE" ]; then
   exit 0
 fi
 
-# Source the Nix profile
-NIX_SH="${NIX_PROFILE_SCRIPT:-/root/.nix-profile/etc/profile.d/nix.sh}"
-if [ -f "$NIX_SH" ]; then
+# Source the Nix profile — try multiple locations
+NIX_SH=""
+for candidate in \
+  "${NIX_PROFILE_SCRIPT:-}" \
+  /root/.nix-profile/etc/profile.d/nix.sh \
+  /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh \
+  /nix/var/nix/profiles/default/etc/profile.d/nix.sh \
+  "$HOME/.nix-profile/etc/profile.d/nix.sh"; do
+  if [ -f "$candidate" ]; then
+    NIX_SH="$candidate"
+    break
+  fi
+done
+
+if [ -n "$NIX_SH" ]; then
+  echo "Sourcing Nix profile: $NIX_SH"
   . "$NIX_SH"
+elif command -v nix >/dev/null 2>&1; then
+  echo "Nix found on PATH (no profile script needed)"
 else
-  echo "ERROR: Nix profile not found at $NIX_SH"
+  echo "ERROR: Nix not found — searched profiles and PATH"
+  echo "Searched: /root/.nix-profile, /nix/var/nix/profiles/default, \$HOME/.nix-profile"
+  find / -name "nix.sh" -maxdepth 6 2>/dev/null || true
+  find / -name "nix" -type f -maxdepth 5 2>/dev/null | head -5 || true
   exit 1
 fi
 
