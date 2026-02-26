@@ -19,11 +19,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Nix (single-user, no daemon) — declarative tool management for knights
-# Pre-create /nix so the installer doesn't need sudo
-RUN mkdir -m 0755 /nix && chown root /nix \
+# Pre-create /nix, disable build-users-group (no nixbld group in slim image)
+RUN mkdir -m 0755 /nix \
+    && mkdir -p /etc/nix \
+    && echo "build-users-group =" > /etc/nix/nix.conf \
+    && echo "experimental-features = nix-command flakes" >> /etc/nix/nix.conf \
     && curl -L https://nixos.org/nix/install | sh -s -- --no-daemon
-ENV NIX_PROFILE_SCRIPT="/root/.nix-profile/etc/profile.d/nix.sh" \
-    NIX_CONFIG="experimental-features = nix-command flakes"
+ENV NIX_PROFILE_SCRIPT="/root/.nix-profile/etc/profile.d/nix.sh"
 
 # Install mise — declarative tool manager (baseline: rg, python, yq)
 RUN curl -fsSL https://mise.run | MISE_INSTALL_PATH=/usr/local/bin/mise sh
