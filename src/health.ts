@@ -2,6 +2,7 @@ import http from "node:http";
 import type { KnightConfig } from "./config.js";
 import { registry } from "./metrics.js";
 import { getStatus as getNatsStatus } from "./nats.js";
+import { handleIntrospect } from "./introspect.js";
 
 let server: http.Server | null = null;
 let skillCount = 0;
@@ -43,6 +44,13 @@ export function startHealthServer(config: KnightConfig): void {
           knight: config.knightName,
         }),
       );
+    } else if (url === "/introspect" || url?.startsWith("/introspect?")) {
+      const urlObj = new URL(url, "http://localhost");
+      const type = (urlObj.searchParams.get("type") ?? "stats") as "stats" | "recent" | "tree";
+      const limit = parseInt(urlObj.searchParams.get("limit") ?? "20", 10);
+      const result = handleIntrospect({ type, limit }, config);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(result, null, 2));
     } else if (url === "/metrics") {
       try {
         const metrics = await registry.metrics();

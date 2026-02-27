@@ -21,6 +21,11 @@ export interface TaskResult {
 
 // Persistent session — reused across tasks
 let session: AgentSession | null = null;
+
+/** Get the active session (or null if not yet created). Used by introspect. */
+export function getActiveSession(): AgentSession | null {
+  return session;
+}
 let cumulativeCostBefore = 0;
 let cumulativeToolCallsBefore = 0;
 let cumulativeTokensBefore = { input: 0, output: 0 };

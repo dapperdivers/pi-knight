@@ -4,6 +4,7 @@ import { connectNats, subscribe, publishResult, drain } from "./nats.js";
 import { startHealthServer, stopHealthServer, setSkillCount, setActiveTaskCount } from "./health.js";
 import { loadSkills } from "@mariozechner/pi-coding-agent";
 import { executeTask } from "./knight.js";
+import { startIntrospect } from "./introspect.js";
 import * as metrics from "./metrics.js";
 
 async function main(): Promise<void> {
@@ -52,6 +53,9 @@ async function main(): Promise<void> {
   // Connect to NATS
   await connectNats(config);
   metrics.natsConnected.labels(config.knightName).set(1);
+
+  // Start introspection responder (zero-cost session queries)
+  startIntrospect(config);
 
   // Subscribe to task stream
   const tasks = await subscribe(config);
