@@ -118,6 +118,20 @@ if [ -d /nix ] && [ -w /nix ]; then
     bootstrap_nix
   else
     log "Phase 2: Nix already bootstrapped ✓"
+    # Restore profile symlink if missing (stale PVC / domain change)
+    if [ ! -d "$NIX_PROFILE/bin" ]; then
+      log "  Profile symlink broken — restoring..."
+      NIX_STORE_PATH=$(find /nix/store -maxdepth 1 -name '*-nix-*' -type d 2>/dev/null | grep -v '\.drv$' | head -1)
+      if [ -n "$NIX_STORE_PATH" ] && [ -x "$NIX_STORE_PATH/bin/nix" ]; then
+        mkdir -p "$(dirname "$NIX_PROFILE")"
+        ln -sfn "$NIX_STORE_PATH" "$NIX_PROFILE"
+        log "  Profile restored → $NIX_STORE_PATH"
+      else
+        log "  WARNING: Could not find nix binary in store — re-bootstrapping"
+        rm -f /nix/.bootstrapped
+        bootstrap_nix
+      fi
+    fi
   fi
 else
   log "Phase 2: No /nix mount — skipping Nix bootstrap"
