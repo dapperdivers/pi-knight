@@ -207,6 +207,29 @@ else
 fi
 
 # ──────────────────────────────────────────────────────────────────
+# Phase 4.5: Vault write check
+# ──────────────────────────────────────────────────────────────────
+if [ -d "/vault" ]; then
+  VAULT_WRITABLE="false"
+  for wpath in Briefings Roundtable; do
+    if [ -d "/vault/$wpath" ]; then
+      if touch "/vault/$wpath/.write-test" 2>/dev/null; then
+        rm -f "/vault/$wpath/.write-test"
+        VAULT_WRITABLE="true"
+      fi
+    fi
+  done
+  if [ "$VAULT_WRITABLE" = "true" ]; then
+    log "Phase 4.5: Vault writable paths verified ✓"
+    export VAULT_WRITABLE=true
+  else
+    log "  WARNING: Vault mounted but writable paths NOT writable"
+    export VAULT_WRITABLE=false
+  fi
+else
+  log "Phase 4.5: No vault mount — skipping"
+fi
+
 # Phase 5: Start the knight
 # ──────────────────────────────────────────────────────────────────
 # Set PATH with tool priority
