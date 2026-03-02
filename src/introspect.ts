@@ -123,24 +123,46 @@ function buildRecent(config: KnightConfig, limit: number) {
         if (typeof content === "string") {
           base.text = content.slice(0, 500);
         } else if (Array.isArray(content)) {
-          // Extract text from content blocks
+          // Collect all text blocks, then generate separate entries for tool_use/tool_result
+          const textParts: string[] = [];
+          const toolEntries: Record<string, unknown>[] = [];
+
           for (const block of content) {
             if (typeof block === "object" && block !== null) {
               if ("text" in block && typeof block.text === "string") {
-                base.text = block.text.slice(0, 500);
-                break;
+                textParts.push(block.text);
               }
               if ("type" in block && (block as any).type === "tool_use") {
-                base.type = "tool_use";
-                base.toolName = (block as any).name;
-                base.input = JSON.stringify((block as any).input ?? {}).slice(0, 500);
+                toolEntries.push({
+                  id: `${entry.id}-tu-${(block as any).id ?? toolEntries.length}`,
+                  parentId: entry.parentId,
+                  type: "tool_use",
+                  timestamp: entry.timestamp,
+                  role: msg.role,
+                  toolName: (block as any).name,
+                  input: JSON.stringify((block as any).input ?? {}).slice(0, 500),
+                });
               }
               if ("type" in block && (block as any).type === "tool_result") {
-                base.type = "tool_result";
-                base.toolName = (block as any).tool_use_id;
-                base.output = JSON.stringify((block as any).content ?? "").slice(0, 500);
+                toolEntries.push({
+                  id: `${entry.id}-tr-${toolEntries.length}`,
+                  parentId: entry.parentId,
+                  type: "tool_result",
+                  timestamp: entry.timestamp,
+                  role: msg.role,
+                  toolName: (block as any).tool_use_id,
+                  output: JSON.stringify((block as any).content ?? "").slice(0, 500),
+                });
               }
             }
+          }
+
+          if (textParts.length > 0) {
+            base.text = textParts.join("\n").slice(0, 500);
+          }
+          // Attach extra entries for tool blocks (picked up after map)
+          if (toolEntries.length > 0) {
+            (base as any)._extraEntries = toolEntries;
           }
         }
       }
@@ -158,9 +180,19 @@ function buildRecent(config: KnightConfig, limit: number) {
     return base;
   });
 
+  // Flatten: expand _extraEntries into the items list
+  const flatItems: Record<string, unknown>[] = [];
+  for (const item of items) {
+    flatItems.push(item);
+    if ((item as any)._extraEntries) {
+      flatItems.push(...(item as any)._extraEntries);
+      delete (item as any)._extraEntries;
+    }
+  }
+
   return {
     knight: config.knightName,
-    entries: items,
+    entries: flatItems,
     total: entries.length,
     returned: items.length,
   };
