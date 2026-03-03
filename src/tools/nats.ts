@@ -49,6 +49,12 @@ export const natsPublishTool: ToolDefinition = {
   name: "nats_publish",
   label: "NATS Publish",
   description: "Publish a message to a NATS subject (fire-and-forget). Use for broadcasting events, sending results, or out-of-band communication.",
+  promptSnippet: "Publish fire-and-forget messages to NATS subjects for inter-knight communication and event broadcasting",
+  promptGuidelines: [
+    "Use fleet-a.tasks.{domain}.{task-id} for task subjects and fleet-a.results.{task-id} for results",
+    "Never publish empty messages — always include meaningful payload",
+    "Prefer nats_request over nats_publish when you need a response from another knight",
+  ],
   parameters: PublishParams,
   async execute(_toolCallId, params: Static<typeof PublishParams>) {
     const js = getJetStream();
@@ -85,6 +91,12 @@ export const natsRequestTool: ToolDefinition = {
   name: "nats_request",
   label: "NATS Request",
   description: "Send a task to another knight and wait for their response. Use for cross-knight collaboration — ask another knight a question or delegate a subtask, then continue with their answer.",
+  promptSnippet: "Send a task to another knight via NATS and wait for their response (synchronous cross-knight collaboration)",
+  promptGuidelines: [
+    "Default timeout is 10 minutes — increase for complex tasks, decrease for simple queries",
+    "Write clear, self-contained task descriptions — the target knight has no context about your current work",
+    "Check the knight's domain before dispatching — send security tasks to Galahad, infra to Tristan, etc.",
+  ],
   parameters: RequestParams,
   async execute(_toolCallId, params: Static<typeof RequestParams>, signal?: AbortSignal) {
     const js = getJetStream();

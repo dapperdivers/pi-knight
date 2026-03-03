@@ -42,6 +42,12 @@ export const spawnSubagentTool: ToolDefinition = {
   label: "Spawn Sub-Agent",
   description:
     "Spawn a temporary focused agent to handle a subtask. The sub-agent runs in-process (instant, no K8s overhead), executes the task with its own context, and returns the result. Use for focused research, analysis, or data extraction that benefits from a clean context window.",
+  promptSnippet: "Spawn an in-process sub-agent for focused subtasks with a clean context window (no K8s overhead)",
+  promptGuidelines: [
+    "Use sub-agents for tasks that benefit from a clean context — focused analysis, data extraction, or research",
+    "Prefer nats_request over spawn_subagent when the task matches another knight's domain expertise",
+    "Sub-agents have no memory of your session — provide all necessary context in the task description",
+  ],
   parameters: SpawnParams,
   async execute(_toolCallId, params: Static<typeof SpawnParams>, signal?: AbortSignal) {
     const modelStr = params.model ?? parentModel;
