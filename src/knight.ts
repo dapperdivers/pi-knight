@@ -150,7 +150,24 @@ export async function executeTask(
   try {
     log.info("Calling sess.prompt()", { taskPreview: task.slice(0, 100) });
     const promptResult = await sess.prompt(task);
-    log.info("sess.prompt() returned", { promptResult: typeof promptResult, promptResultStr: String(promptResult)?.slice(0, 200) });
+    log.info("sess.prompt() returned", { promptResult: typeof promptResult });
+    // Check for swallowed errors — get last assistant text and session stats
+    const lastText = sess.getLastAssistantText();
+    const statsNow = sess.getSessionStats();
+    // Dig into agent messages for any error
+    const agentState = (sess as any).agent?.state || (sess as any).getAgentState?.() || {};
+    const msgs = agentState.messages || [];
+    const lastAsstMsg = [...msgs].reverse().find((m: any) => m.role === "assistant");
+    log.info("Post-prompt state", {
+      lastAssistantText: lastText?.slice(0, 300) ?? "null",
+      totalMessages: statsNow.totalMessages,
+      tokens: statsNow.tokens,
+      cost: statsNow.cost,
+      lastMsgStopReason: lastAsstMsg?.stopReason,
+      lastMsgError: lastAsstMsg?.errorMessage?.slice(0, 500),
+      lastMsgContentTypes: lastAsstMsg?.content?.map((c: any) => c.type),
+      agentError: agentState.error,
+    });
   } catch (err: any) {
     log.error("sess.prompt() threw", { error: err?.message || String(err), stack: err?.stack?.slice(0, 500) });
   } finally {
