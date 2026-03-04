@@ -50,7 +50,28 @@ async function getSession(config: KnightConfig): Promise<AgentSession> {
 
   setKnightName(config.knightName);
   setParentModel(config.knightModel);
-  const model = getModel(provider as any, modelName as any);
+  let model = getModel(provider as any, modelName as any);
+
+  // If model not found in registry, create a custom model definition.
+  // This enables local/custom OpenAI-compatible endpoints (e.g. LiteLLM → Ollama).
+  if (!model) {
+    const baseUrl = process.env.OPENAI_BASE_URL || process.env.OPENAI_API_BASE || "http://localhost:4000/v1";
+    log.info("Model not in registry, creating custom openai-completions model", {
+      provider, model: modelName, baseUrl
+    });
+    model = {
+      id: modelName,
+      name: modelName,
+      api: "openai-completions" as any,
+      provider: provider,
+      baseUrl,
+      reasoning: false,
+      input: ["text"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 32768,
+      maxTokens: 8192,
+    } as any;
+  }
 
   const thinkingLevel = (config.thinkingLevel ?? "off") as ThinkingLevel;
 
