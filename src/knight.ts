@@ -148,7 +148,11 @@ export async function executeTask(
   }
 
   try {
-    await sess.prompt(task);
+    log.info("Calling sess.prompt()", { taskPreview: task.slice(0, 100) });
+    const promptResult = await sess.prompt(task);
+    log.info("sess.prompt() returned", { promptResult: typeof promptResult, promptResultStr: String(promptResult)?.slice(0, 200) });
+  } catch (err: any) {
+    log.error("sess.prompt() threw", { error: err?.message || String(err), stack: err?.stack?.slice(0, 500) });
   } finally {
     if (signal && abortHandler) {
       signal.removeEventListener("abort", abortHandler);
