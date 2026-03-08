@@ -12,6 +12,7 @@ export interface KnightConfig {
   hostname: string;
   thinkingLevel: string;
   maxRetryDelayMs: number;
+  contextPruneTokens: number;
 }
 
 function requireEnv(name: string): string {
@@ -33,5 +34,6 @@ export function loadConfig(): KnightConfig {
     hostname: os.hostname(),
     thinkingLevel: process.env["KNIGHT_THINKING"] ?? "off",
     maxRetryDelayMs: parseInt(process.env["MAX_RETRY_DELAY_MS"] ?? "60000", 10),
+    contextPruneTokens: parseInt(process.env["CONTEXT_PRUNE_TOKENS"] ?? "100000", 10),
   };
 }
