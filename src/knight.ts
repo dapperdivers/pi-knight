@@ -98,6 +98,23 @@ async function getSession(config: KnightConfig): Promise<AgentSession> {
   session.agent.maxRetryDelayMs = config.maxRetryDelayMs;
   log.info("Retry delay cap configured", { maxRetryDelayMs: config.maxRetryDelayMs });
 
+  // onPayload observability hook — log model/token metadata for each LLM call
+  (session.agent as any)._onPayload = (payload: unknown, model: any) => {
+    try {
+      const p = payload as any;
+      const tokenEstimate = JSON.stringify(p).length / 4; // rough char-to-token estimate
+      log.debug("LLM payload", {
+        model: model?.id ?? model?.name ?? "unknown",
+        provider: model?.provider ?? "unknown",
+        messageCount: Array.isArray(p?.messages) ? p.messages.length : undefined,
+        estimatedTokens: Math.round(tokenEstimate),
+        maxTokens: p?.max_tokens,
+        thinkingBudget: p?.thinking?.budget_tokens,
+      });
+    } catch { /* observability must never break the agent */ }
+    return undefined; // pass through unmodified
+  };
+
   // Capture baseline stats (session may have prior history from PVC)
   const stats = session.getSessionStats();
   cumulativeCostBefore = stats.cost;
