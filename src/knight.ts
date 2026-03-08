@@ -94,6 +94,10 @@ async function getSession(config: KnightConfig): Promise<AgentSession> {
 
   session = newSession;
 
+  // Set maxRetryDelayMs on the underlying agent
+  session.agent.maxRetryDelayMs = config.maxRetryDelayMs;
+  log.info("Retry delay cap configured", { maxRetryDelayMs: config.maxRetryDelayMs });
+
   // Capture baseline stats (session may have prior history from PVC)
   const stats = session.getSessionStats();
   cumulativeCostBefore = stats.cost;
