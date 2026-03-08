@@ -128,6 +128,18 @@ async function getSession(config: KnightConfig): Promise<AgentSession> {
     return result;
   };
 
+  // thinkingBudgets — set custom token budgets if thinking is enabled
+  if (thinkingLevel !== "off") {
+    session.agent.thinkingBudgets = {
+      low: config.thinkingBudgetLow,
+      medium: config.thinkingBudgetMedium,
+      high: config.thinkingBudgetHigh,
+    };
+    log.info("Thinking budgets configured", {
+      level: thinkingLevel,
+      budgets: session.agent.thinkingBudgets,
+    });
+  }
 
   // onPayload observability hook — log model/token metadata for each LLM call
   (session.agent as any)._onPayload = (payload: unknown, model: any) => {
