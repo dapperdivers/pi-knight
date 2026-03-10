@@ -5,6 +5,9 @@ export interface KnightConfig {
   knightModel: string;
   subscribeTopics: string[];
   natsUrl: string;
+  natsTasksStream: string;
+  natsResultsStream: string;
+  natsResultsPrefix: string;
   taskTimeoutMs: number;
   maxConcurrentTasks: number;
   metricsPort: number;
@@ -30,6 +33,9 @@ export function loadConfig(): KnightConfig {
     knightModel: process.env["KNIGHT_MODEL"] ?? "anthropic/claude-sonnet-4-5",
     subscribeTopics: requireEnv("SUBSCRIBE_TOPICS").split(",").map((s) => s.trim()),
     natsUrl: process.env["NATS_URL"] ?? "nats://nats.database.svc.cluster.local:4222",
+    natsTasksStream: process.env["NATS_TASKS_STREAM"] ?? "fleet_a_tasks",
+    natsResultsStream: process.env["NATS_RESULTS_STREAM"] ?? "fleet_a_results",
+    natsResultsPrefix: process.env["NATS_RESULTS_PREFIX"] ?? "fleet-a.results",
     taskTimeoutMs: parseInt(process.env["TASK_TIMEOUT_MS"] ?? "1800000", 10),
     maxConcurrentTasks: parseInt(process.env["MAX_CONCURRENT_TASKS"] ?? "2", 10),
     metricsPort: parseInt(process.env["METRICS_PORT"] ?? "3000", 10),

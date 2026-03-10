@@ -72,6 +72,7 @@ export async function connectNats(config: KnightConfig): Promise<void> {
 
 export async function subscribe(config: KnightConfig): Promise<AsyncIterable<ParsedTask>> {
   if (!nc || !js) throw new Error("NATS not connected");
+  _config = config;
 
   const jsm: JetStreamManager = await nc.jetstreamManager();
 
@@ -92,7 +93,7 @@ export async function subscribe(config: KnightConfig): Promise<AsyncIterable<Par
   };
 
   try {
-    const existing = await jsm.consumers.info("fleet_a_tasks", durableName);
+    const existing = await jsm.consumers.info(config.natsTasksStream, durableName);
     const existingFilters = existing.config.filter_subjects ??
       (existing.config.filter_subject ? [existing.config.filter_subject] : []);
     const desiredFilters = [...filterSubjects].sort();
@@ -115,7 +116,7 @@ export async function subscribe(config: KnightConfig): Promise<AsyncIterable<Par
           ackWait: existing.config.ack_wait !== expectedAckWait,
         },
       });
-      await jsm.consumers.delete("fleet_a_tasks", durableName);
+      await jsm.consumers.delete(config.natsTasksStream, durableName);
       log.info("Old consumer deleted", { durable: durableName });
     } else {
       log.info("Consumer config matches — reusing", { durable: durableName, filters: currentFilters });
@@ -125,10 +126,10 @@ export async function subscribe(config: KnightConfig): Promise<AsyncIterable<Par
     log.info("No existing consumer found, creating new", { durable: durableName });
   }
 
-  await jsm.consumers.add("fleet_a_tasks", desiredConfig);
-  log.info("Consumer ready", { durable: durableName, filters: filterSubjects });
+  await jsm.consumers.add(config.natsTasksStream, desiredConfig);
+  log.info("Consumer ready", { durable: durableName, stream: config.natsTasksStream, filters: filterSubjects });
 
-  consumer = await js.consumers.get("fleet_a_tasks", durableName).then((c) => c.consume());
+  consumer = await js.consumers.get(config.natsTasksStream, durableName).then((c) => c.consume());
 
   // Return an async iterable that yields parsed tasks
   const msgs = consumer!;
@@ -176,13 +177,17 @@ export async function subscribe(config: KnightConfig): Promise<AsyncIterable<Par
   };
 }
 
+// Module-level config ref for publishResult (set during subscribe)
+let _config: KnightConfig | null = null;
+
 export async function publishResult(
   taskId: string,
   result: Record<string, unknown>,
 ): Promise<void> {
   if (!js) throw new Error("NATS not connected — cannot publish result");
 
-  const subject = `fleet-a.results.${taskId}`;
+  const prefix = _config?.natsResultsPrefix ?? "fleet-a.results";
+  const subject = `${prefix}.${taskId}`;
   const data = sc.encode(JSON.stringify(result));
   await js.publish(subject, data);
   log.info("Result published", { taskId, subject });
