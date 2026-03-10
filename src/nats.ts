@@ -87,7 +87,7 @@ export async function subscribe(config: KnightConfig): Promise<AsyncIterable<Par
     durable_name: durableName,
     filter_subjects: filterSubjects,
     ack_policy: AckPolicy.Explicit,
-    deliver_policy: DeliverPolicy.New,
+    deliver_policy: DeliverPolicy.All,
     max_deliver: 1,
     ack_wait: (config.taskTimeoutMs + 60_000) * 1_000_000, // task timeout + 60s buffer, in nanoseconds
   };
@@ -102,7 +102,7 @@ export async function subscribe(config: KnightConfig): Promise<AsyncIterable<Par
     const expectedAckWait = (config.taskTimeoutMs + 60_000) * 1_000_000;
     const needsRecreate =
       JSON.stringify(currentFilters) !== JSON.stringify(desiredFilters) ||
-      existing.config.deliver_policy !== DeliverPolicy.New ||
+      existing.config.deliver_policy !== DeliverPolicy.All ||
       existing.config.max_deliver !== 1 ||
       existing.config.ack_wait !== expectedAckWait;
 
