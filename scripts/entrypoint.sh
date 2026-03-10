@@ -177,6 +177,7 @@ if [ -f "$FLAKE_FILE" ] && command -v nix >/dev/null 2>&1; then
     if STORE_PATH=$(nix build ".#default" --no-link --print-out-paths 2>&1); then
       STORE_PATH=$(echo "$STORE_PATH" | tail -1)
       if [ -d "$STORE_PATH" ]; then
+        chmod -R u+w "$NIX_ENV" 2>/dev/null || true
         rm -rf "$NIX_ENV" 2>/dev/null || true
         cp -a "$STORE_PATH" "$NIX_ENV"
         echo "$NEW_HASH" > "$HASH_FILE"
