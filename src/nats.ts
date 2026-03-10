@@ -120,6 +120,9 @@ export async function subscribe(config: KnightConfig): Promise<AsyncIterable<Par
       log.info("Old consumer deleted", { durable: durableName });
     } else {
       log.info("Consumer config matches — reusing", { durable: durableName, filters: currentFilters });
+      // Skip add — consumer already exists with correct config
+      consumer = await js.consumers.get(config.natsTasksStream, durableName).then((c) => c.consume());
+      return buildTaskIterable(consumer!, config);
     }
   } catch {
     // Consumer doesn't exist yet — will be created below
@@ -130,9 +133,10 @@ export async function subscribe(config: KnightConfig): Promise<AsyncIterable<Par
   log.info("Consumer ready", { durable: durableName, stream: config.natsTasksStream, filters: filterSubjects });
 
   consumer = await js.consumers.get(config.natsTasksStream, durableName).then((c) => c.consume());
+  return buildTaskIterable(consumer!, config);
+}
 
-  // Return an async iterable that yields parsed tasks
-  const msgs = consumer!;
+function buildTaskIterable(msgs: ConsumerMessages, config: KnightConfig): AsyncIterable<ParsedTask> {
   return {
     async *[Symbol.asyncIterator]() {
       for await (const msg of msgs) {
