@@ -16,10 +16,14 @@ const sc = StringCodec();
 let _knightName = "unknown";
 export function setKnightName(name: string): void { _knightName = name; }
 
+// NATS prefix — derived from config at startup (e.g. "fleet-a" or "rt-dev")
+let _natsPrefix = "fleet-a";
+export function setNatsPrefix(prefix: string): void { _natsPrefix = prefix; }
+
 // --- Parameter Schemas ---
 
 const PublishParams = Type.Object({
-  subject: Type.String({ description: "NATS subject to publish to (e.g. fleet-a.tasks.security.my-task-id)" }),
+  subject: Type.String({ description: "NATS subject to publish to (e.g. <prefix>.tasks.security.my-task-id)" }),
   message: Type.String({ description: "Message payload (string or JSON)" }),
 });
 
@@ -51,7 +55,7 @@ export const natsPublishTool: ToolDefinition = {
   description: "Publish a message to a NATS subject (fire-and-forget). Use for broadcasting events, sending results, or out-of-band communication.",
   promptSnippet: "Publish fire-and-forget messages to NATS subjects for inter-knight communication and event broadcasting",
   promptGuidelines: [
-    "Use fleet-a.tasks.{domain}.{task-id} for task subjects and fleet-a.results.{task-id} for results",
+    "Use your table's NATS prefix for subjects: <prefix>.tasks.{domain}.{task-id} and <prefix>.results.{task-id}",
     "Never publish empty messages — always include meaningful payload",
     "Prefer nats_request over nats_publish when you need a response from another knight",
   ],
@@ -110,8 +114,8 @@ export const natsRequestTool: ToolDefinition = {
 
     const timeoutMs = params.timeout_ms ?? 600_000; // 10 min default
     const taskId = `${params.knight}-xreq-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const taskSubject = `fleet-a.tasks.${params.domain}.${taskId}`;
-    const resultSubject = `fleet-a.results.${taskId}`;
+    const taskSubject = `${_natsPrefix}.tasks.${params.domain}.${taskId}`;
+    const resultSubject = `${_natsPrefix}.results.${taskId}`;
 
     log.info("nats_request: dispatching", {
       knight: params.knight,

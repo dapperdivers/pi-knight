@@ -22,7 +22,9 @@ export function startIntrospect(config: KnightConfig): void {
     return;
   }
 
-  const subject = `fleet-a.introspect.${config.knightName}`;
+  // Derive prefix from natsResultsPrefix (e.g. "rt-dev.results" → "rt-dev")
+  const prefix = config.natsResultsPrefix.replace(/\.results$/, "");
+  const subject = `${prefix}.introspect.${config.knightName}`;
   sub = nc.subscribe(subject);
   log.info("Introspect responder started", { subject });
 
