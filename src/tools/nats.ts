@@ -1,8 +1,13 @@
 /**
- * NATS custom tools for Pi SDK agent sessions.
+ * NATS communication tools for Pi SDK agent sessions.
  *
  * Provides native tool-loop integration for knight-to-knight
- * communication over NATS JetStream. No shell scripts needed.
+ * communication over NATS JetStream. These tools are the primary
+ * mechanism for cross-knight collaboration — no shell scripts or
+ * external skills needed.
+ *
+ * Table-aware: all subjects use the knight's own NATS prefix,
+ * derived from NATS_RESULTS_PREFIX at startup.
  */
 import { Type, type Static } from "@sinclair/typebox";
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
@@ -23,24 +28,18 @@ export function setNatsPrefix(prefix: string): void { _natsPrefix = prefix; }
 // --- Parameter Schemas ---
 
 const PublishParams = Type.Object({
-  subject: Type.String({ description: "NATS subject to publish to (e.g. <prefix>.tasks.security.my-task-id)" }),
+  subject: Type.String({ description: "Full NATS subject to publish to" }),
   message: Type.String({ description: "Message payload (string or JSON)" }),
 });
 
 const RequestParams = Type.Object({
-  knight: Type.String({ description: "Target knight name" }),
-  domain: Type.String({ description: "Task domain (e.g. finance, security, research)" }),
-  task: Type.String({ description: "Task description for the target knight" }),
-  timeout_ms: Type.Optional(Type.Number({ description: "Timeout in ms (default: 600000 = 10 min)" })),
+  knight: Type.String({ description: "Target knight name (e.g. 'galahad', 'rt-operator')" }),
+  domain: Type.String({ description: "Task domain matching the target knight's NATS filter (e.g. 'security', 'operator', 'frontend')" }),
+  task: Type.String({ description: "Clear, self-contained task description — the target knight has NO context about your current work" }),
+  timeout_ms: Type.Optional(Type.Number({ description: "Timeout in ms (default: 600000 = 10 min). Increase for complex tasks." })),
 });
 
-const SpawnSubagentParams = Type.Object({
-  task: Type.String({ description: "Task for the sub-agent to execute" }),
-  system_prompt: Type.Optional(Type.String({ description: "Custom system prompt for the sub-agent (default: minimal)" })),
-  model: Type.Optional(Type.String({ description: "Model override as provider/model (default: same as parent)" })),
-});
-
-// --- Tool Implementations ---
+// --- Helpers ---
 
 function textResult(text: string): AgentToolResult<void> {
   return { content: [{ type: "text", text }], details: undefined };
@@ -48,16 +47,27 @@ function textResult(text: string): AgentToolResult<void> {
 
 /**
  * nats_publish — Fire-and-forget message to any NATS subject.
+ *
+ * Your normal task results are published automatically by the runtime.
+ * Only use this for OUT-OF-BAND messaging: alerts, reports, broadcasts.
  */
 export const natsPublishTool: ToolDefinition = {
   name: "nats_publish",
   label: "NATS Publish",
-  description: "Publish a message to a NATS subject (fire-and-forget). Use for broadcasting events, sending results, or out-of-band communication.",
-  promptSnippet: "Publish fire-and-forget messages to NATS subjects for inter-knight communication and event broadcasting",
+  description: [
+    "Publish a fire-and-forget message to a NATS subject.",
+    "Your task results are published AUTOMATICALLY — do NOT use this for normal task responses.",
+    "Use for: alerts, reports, broadcasts, or out-of-band messages.",
+  ].join(" "),
+  promptSnippet: [
+    `Your NATS table prefix is dynamically set at startup (current: check your SUBSCRIBE_TOPICS).`,
+    `Subject format: <your-prefix>.alerts.<type>, <your-prefix>.reports.<type>, etc.`,
+    `NEVER publish empty messages. NEVER use this for task results (the runtime handles that).`,
+  ].join("\n"),
   promptGuidelines: [
-    "Use your table's NATS prefix for subjects: <prefix>.tasks.{domain}.{task-id} and <prefix>.results.{task-id}",
-    "Never publish empty messages — always include meaningful payload",
-    "Prefer nats_request over nats_publish when you need a response from another knight",
+    "Only use for out-of-band messaging — your task result is auto-published by the runtime",
+    "Use your table's prefix in subjects (visible in your startup logs)",
+    "Never publish empty messages",
   ],
   parameters: PublishParams,
   async execute(_toolCallId, params: Static<typeof PublishParams>) {
@@ -84,22 +94,55 @@ export const natsPublishTool: ToolDefinition = {
 /**
  * nats_request — Send a task to another knight and wait for their response.
  *
- * Flow:
- * 1. Generate unique task ID
- * 2. Subscribe to result subject for that task ID
- * 3. Publish task to target knight's domain subject
- * 4. Wait for result (up to timeout)
- * 5. Return the result text to the calling agent's tool loop
+ * This is the primary mechanism for cross-knight collaboration. It:
+ * 1. Generates a unique task ID
+ * 2. Subscribes to the result subject for that task
+ * 3. Publishes the task to the target knight's domain subject
+ * 4. Blocks until the target responds (or timeout)
+ * 5. Returns the result text into your tool loop
+ *
+ * IMPORTANT: Only request knights within YOUR OWN table. Cross-table
+ * requests will timeout because subjects don't cross table boundaries.
  */
 export const natsRequestTool: ToolDefinition = {
   name: "nats_request",
-  label: "NATS Request",
-  description: "Send a task to another knight and wait for their response. Use for cross-knight collaboration — ask another knight a question or delegate a subtask, then continue with their answer.",
-  promptSnippet: "Send a task to another knight via NATS and wait for their response (synchronous cross-knight collaboration)",
+  label: "Knight Request",
+  description: [
+    "Send a task to another knight in your table and wait for their response.",
+    "Use for cross-knight collaboration: ask a specialist for help, then continue with their answer.",
+    "ONLY works with knights in YOUR table — cross-table requests will timeout.",
+  ].join(" "),
+  promptSnippet: [
+    `## Knight-to-Knight Communication`,
+    ``,
+    `Use nats_request to ask another knight for help. The request is routed`,
+    `through your table's NATS streams automatically.`,
+    ``,
+    `### Rules`,
+    `- **Stay in your table**: only request knights that share your NATS prefix.`,
+    `  Cross-table requests WILL timeout (different streams).`,
+    `- **Be specific**: write a clear, complete task — the target has NO context.`,
+    `- **Max depth 1**: include "Do not delegate to other knights" in your task.`,
+    `- **Cost-aware**: each request costs tokens. Only ask when genuinely needed.`,
+    ``,
+    `### Usage`,
+    `\`\`\``,
+    `nats_request(`,
+    `  knight: "galahad",`,
+    `  domain: "security",`,
+    `  task: "Check if CVE-2026-1234 affects any images in the roundtable namespace. Do not delegate to other knights."`,
+    `)`,
+    `\`\`\``,
+    ``,
+    `If you need a knight from a DIFFERENT table, say so in your task output`,
+    `and let the orchestrator (Tim or a chain) handle cross-table coordination.`,
+  ].join("\n"),
   promptGuidelines: [
-    "Default timeout is 10 minutes — increase for complex tasks, decrease for simple queries",
-    "Write clear, self-contained task descriptions — the target knight has no context about your current work",
-    "Check the knight's domain before dispatching — send security tasks to Galahad, infra to Tristan, etc.",
+    "Only request knights within your own table — cross-table requests timeout",
+    "Write clear, self-contained task descriptions with full context",
+    "Include 'Do not delegate to other knights' to prevent request chains",
+    "Default timeout is 10 minutes — increase for complex tasks",
+    "Check the target knight's domain matches their NATS filter subject",
   ],
   parameters: RequestParams,
   async execute(_toolCallId, params: Static<typeof RequestParams>, signal?: AbortSignal) {
@@ -122,6 +165,7 @@ export const natsRequestTool: ToolDefinition = {
       domain: params.domain,
       taskId,
       timeoutMs,
+      prefix: _natsPrefix,
     });
 
     try {
@@ -136,7 +180,7 @@ export const natsRequestTool: ToolDefinition = {
         from: _knightName.toLowerCase(),
         dispatched_by: _knightName,
         timestamp: new Date().toISOString(),
-        metadata: { timeout_ms: timeoutMs },
+        metadata: { timeout_ms: timeoutMs, table_prefix: _natsPrefix },
       });
       await js.publish(taskSubject, sc.encode(payload));
       log.info("nats_request: task published", { taskId, subject: taskSubject });
