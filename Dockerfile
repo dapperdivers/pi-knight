@@ -35,6 +35,9 @@ ENV MISE_DATA_DIR=/app/.mise \
     MISE_YES=1
 RUN mise install --cd /app && mise reshim
 
+# ── agent-browser CLI (token-efficient browser automation) ────────
+RUN npm install -g agent-browser 2>/dev/null || true
+
 # ── App code ──────────────────────────────────────────────────────
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules ./node_modules
