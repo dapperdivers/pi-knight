@@ -4,6 +4,7 @@ import {
   DefaultResourceLoader,
   type AgentSession,
   type SessionStats,
+  compactMessages,
 } from "@mariozechner/pi-coding-agent";
 import type { ThinkingLevel, AgentMessage } from "@mariozechner/pi-agent-core";
 import type { KnightConfig } from "./config.js";
@@ -81,6 +82,7 @@ async function getSession(config: KnightConfig): Promise<AgentSession> {
   const { session: newSession } = await createAgentSession({
     model,
     thinkingLevel,
+    sessionId: `knight-${config.knightName}`,
     cwd: "/data",
     agentDir: "/config",
     customTools: [
@@ -105,9 +107,9 @@ async function getSession(config: KnightConfig): Promise<AgentSession> {
   session.agent.maxRetryDelayMs = config.maxRetryDelayMs;
   log.info("Retry delay cap configured", { maxRetryDelayMs: config.maxRetryDelayMs });
 
-  // transformContext — prune old tool results when context exceeds token threshold
+  // transformContext — semantic compaction when context exceeds token threshold
   const pruneThreshold = config.contextPruneTokens;
-  (session.agent as any).transformContext = async (messages: AgentMessage[]): Promise<AgentMessage[]> => {
+  (session.agent as any).transformContext = async (messages: AgentMessage[], signal?: AbortSignal): Promise<AgentMessage[]> => {
     const totalChars = messages.reduce((sum, m) => {
       const content = (m as any).content;
       return sum + (typeof content === "string" ? content.length : JSON.stringify(content ?? "").length);
@@ -116,23 +118,21 @@ async function getSession(config: KnightConfig): Promise<AgentSession> {
 
     if (estimatedTokens <= pruneThreshold) return messages;
 
-    log.info("Context pruning triggered", { estimatedTokens, threshold: pruneThreshold, messageCount: messages.length });
-    let pruned = 0;
-    // Prune from oldest, skip the last few messages to preserve recency
-    const result = messages.map((m, i) => {
-      if (i >= messages.length - 4) return m; // keep recent messages intact
-      const role = (m as any).role;
-      if (role === "tool_result" || role === "tool") {
-        const content = (m as any).content;
-        if (typeof content === "string" && content.length > 500) {
-          pruned++;
-          return { ...m, content: content.slice(0, 500) + "\n[…truncated by context pruning]" } as AgentMessage;
-        }
-      }
-      return m;
+    log.info("Context compaction triggered", { estimatedTokens, threshold: pruneThreshold, messageCount: messages.length });
+
+    // Use Pi SDK's semantic compaction (summarizes old context with cheap model)
+    const compacted = await compactMessages(messages, {
+      targetTokens: Math.floor(pruneThreshold * 0.7),
+      model: getModel("anthropic", "claude-haiku-3-5"),
+      preserveRecent: 10,
+      signal,
+    }).catch((err) => {
+      log.warn("Compaction failed, falling back to original messages", { error: String(err) });
+      return messages;
     });
-    if (pruned > 0) log.info("Context pruning complete", { prunedMessages: pruned });
-    return result;
+
+    log.info("Context compaction complete", { before: messages.length, after: compacted.length });
+    return compacted;
   };
 
   // thinkingBudgets — set custom token budgets if thinking is enabled
@@ -244,6 +244,7 @@ export async function executeTask(
     outputTokens: taskTokens.output,
     cost: taskCost,
     toolCalls: taskToolCalls,
+    estimatedCacheTokens: Math.max(0, tokensBefore.input - taskTokens.input),
   });
 
   return {
