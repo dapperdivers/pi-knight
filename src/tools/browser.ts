@@ -27,23 +27,15 @@ function textResult(text: string): AgentToolResult<void> {
   return { content: [{ type: "text", text }], details: undefined };
 }
 
-let connected = false;
-
-function ensureConnected(): void {
-  if (connected) return;
-  try {
-    execSync(`agent-browser connect ${CDP_URL}`, {
-      timeout: 10000,
-      encoding: "utf-8",
-    });
-    connected = true;
-  } catch (err: any) {
-    throw new Error(`Failed to connect to Chrome sidecar at ${CDP_URL}: ${err.message}`);
-  }
-}
-
 function runBrowser(args: string, timeoutMs = 30000): string {
-  ensureConnected();
+  // Always reconnect before every command — agent-browser daemon can die
+  // between calls. connect is idempotent and fast when already connected.
+  try {
+    execSync(`agent-browser connect ${CDP_URL}`, { timeout: 10000, encoding: "utf-8", stdio: "pipe" });
+  } catch {
+    // Best-effort — command may still work via existing daemon
+  }
+
   try {
     const result = execSync(`agent-browser ${args}`, {
       timeout: timeoutMs,
@@ -53,13 +45,6 @@ function runBrowser(args: string, timeoutMs = 30000): string {
   } catch (err: any) {
     const stderr = err.stderr?.toString() || "";
     const stdout = err.stdout?.toString() || "";
-    // If connection lost, reset and retry once
-    if (stderr.includes("not connected") || stderr.includes("No browser")) {
-      connected = false;
-      ensureConnected();
-      const retry = execSync(`agent-browser ${args}`, { timeout: timeoutMs, encoding: "utf-8" });
-      return retry.trim();
-    }
     throw new Error(stderr || stdout || err.message);
   }
 }
