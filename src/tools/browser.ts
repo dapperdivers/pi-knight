@@ -7,7 +7,8 @@
 
 import { execSync } from "child_process";
 import { Type, type Static } from "@sinclair/typebox";
-import type { AgentTool, AgentToolResult } from "@anthropic-ai/sdk/resources/beta";
+import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
+import type { AgentToolResult } from "@mariozechner/pi-agent-core";
 
 const BROWSER_DISABLED_MSG =
   "Browser capability not enabled for this knight. Set spec.capabilities.browser: true in your Knight CR.";
@@ -32,100 +33,95 @@ function runBrowser(args: string, timeoutMs = 30000): string {
 }
 
 function textResult(text: string): AgentToolResult<void> {
-  return { type: "tool_result", content: [{ type: "text", text }] } as any;
+  return { type: "tool_result", content: [{ type: "text", text }] } as AgentToolResult<void>;
 }
 
-// --- Tool parameter schemas ---
+// --- Tool definitions ---
 
 const OpenParams = Type.Object({
   url: Type.String({ description: "URL to navigate to" }),
 });
 
-const ClickParams = Type.Object({
-  ref: Type.String({ description: "Element ref from snapshot (e.g. @e2) or CSS selector" }),
-});
-
-const FillParams = Type.Object({
-  ref: Type.String({ description: "Element ref from snapshot (e.g. @e3) or CSS selector" }),
-  text: Type.String({ description: "Text to fill into the element" }),
-});
-
-const GetTextParams = Type.Object({
-  ref: Type.String({ description: "Element ref from snapshot or CSS selector" }),
-});
-
-const EvalParams = Type.Object({
-  js: Type.String({ description: "JavaScript code to evaluate in the page" }),
-});
-
-const ScreenshotParams = Type.Object({
-  path: Type.Optional(Type.String({ description: "File path to save screenshot (optional)" })),
-  full: Type.Optional(Type.Boolean({ description: "Capture full page screenshot" })),
-});
-
-// --- Tool definitions ---
-
-const browserOpen: AgentTool = {
+export const browserOpenTool: ToolDefinition = {
   name: "browser_open",
-  description:
-    "Navigate the browser to a URL. Use for web pages that need JS rendering, form interaction, or when curl is insufficient.",
-  input_schema: OpenParams as any,
+  label: "Browser Open",
+  description: "Navigate the browser to a URL. Use for JS-rendered pages, SPAs, or when curl is insufficient.",
+  parameters: OpenParams,
   async execute(_toolCallId: string, params: Static<typeof OpenParams>) {
     if (!browserEnabled()) return textResult(BROWSER_DISABLED_MSG);
     const result = runBrowser(`open "${params.url}"`);
     return textResult(result || `Navigated to ${params.url}`);
   },
-} as any;
+};
 
-const browserSnapshot: AgentTool = {
+export const browserSnapshotTool: ToolDefinition = {
   name: "browser_snapshot",
+  label: "Browser Snapshot",
   description:
-    "Get the accessibility tree of the current page with element refs (@e1, @e2, etc.). Use refs to interact with elements via browser_click, browser_fill, etc.",
-  input_schema: Type.Object({}) as any,
+    "Get the accessibility tree of the current page with element refs (@e1, @e2). Use refs to interact via browser_click, browser_fill, etc.",
+  parameters: Type.Object({}),
   async execute() {
     if (!browserEnabled()) return textResult(BROWSER_DISABLED_MSG);
     const result = runBrowser("snapshot", 15000);
     return textResult(result);
   },
-} as any;
+};
 
-const browserClick: AgentTool = {
+const RefParams = Type.Object({
+  ref: Type.String({ description: "Element ref from snapshot (e.g. @e2) or CSS selector" }),
+});
+
+export const browserClickTool: ToolDefinition = {
   name: "browser_click",
+  label: "Browser Click",
   description: "Click an element by ref (from snapshot) or CSS selector.",
-  input_schema: ClickParams as any,
-  async execute(_toolCallId: string, params: Static<typeof ClickParams>) {
+  parameters: RefParams,
+  async execute(_toolCallId: string, params: Static<typeof RefParams>) {
     if (!browserEnabled()) return textResult(BROWSER_DISABLED_MSG);
     const result = runBrowser(`click "${params.ref}"`);
     return textResult(result || `Clicked ${params.ref}`);
   },
-} as any;
+};
 
-const browserFill: AgentTool = {
+const FillParams = Type.Object({
+  ref: Type.String({ description: "Element ref from snapshot or CSS selector" }),
+  text: Type.String({ description: "Text to fill into the element" }),
+});
+
+export const browserFillTool: ToolDefinition = {
   name: "browser_fill",
+  label: "Browser Fill",
   description: "Clear and fill an input element with text.",
-  input_schema: FillParams as any,
+  parameters: FillParams,
   async execute(_toolCallId: string, params: Static<typeof FillParams>) {
     if (!browserEnabled()) return textResult(BROWSER_DISABLED_MSG);
     const result = runBrowser(`fill "${params.ref}" "${params.text}"`);
-    return textResult(result || `Filled ${params.ref} with "${params.text}"`);
+    return textResult(result || `Filled ${params.ref}`);
   },
-} as any;
+};
 
-const browserGetText: AgentTool = {
+export const browserGetTextTool: ToolDefinition = {
   name: "browser_get_text",
+  label: "Browser Get Text",
   description: "Get the text content of an element.",
-  input_schema: GetTextParams as any,
-  async execute(_toolCallId: string, params: Static<typeof GetTextParams>) {
+  parameters: RefParams,
+  async execute(_toolCallId: string, params: Static<typeof RefParams>) {
     if (!browserEnabled()) return textResult(BROWSER_DISABLED_MSG);
     const result = runBrowser(`get text "${params.ref}"`);
     return textResult(result);
   },
-} as any;
+};
 
-const browserScreenshot: AgentTool = {
+const ScreenshotParams = Type.Object({
+  path: Type.Optional(Type.String({ description: "File path to save screenshot" })),
+  full: Type.Optional(Type.Boolean({ description: "Capture full page" })),
+});
+
+export const browserScreenshotTool: ToolDefinition = {
   name: "browser_screenshot",
+  label: "Browser Screenshot",
   description: "Take a screenshot of the current page.",
-  input_schema: ScreenshotParams as any,
+  parameters: ScreenshotParams,
   async execute(_toolCallId: string, params: Static<typeof ScreenshotParams>) {
     if (!browserEnabled()) return textResult(BROWSER_DISABLED_MSG);
     let args = "screenshot";
@@ -134,43 +130,48 @@ const browserScreenshot: AgentTool = {
     const result = runBrowser(args);
     return textResult(result || "Screenshot captured");
   },
-} as any;
+};
 
-const browserEval: AgentTool = {
+const EvalParams = Type.Object({
+  js: Type.String({ description: "JavaScript code to evaluate in the page" }),
+});
+
+export const browserEvalTool: ToolDefinition = {
   name: "browser_eval",
+  label: "Browser Eval",
   description: "Evaluate JavaScript in the browser page context.",
-  input_schema: EvalParams as any,
+  parameters: EvalParams,
   async execute(_toolCallId: string, params: Static<typeof EvalParams>) {
     if (!browserEnabled()) return textResult(BROWSER_DISABLED_MSG);
-    // Base64 encode to avoid shell escaping issues
     const b64 = Buffer.from(params.js).toString("base64");
     const result = runBrowser(`eval -b "${b64}"`, 30000);
     return textResult(result);
   },
-} as any;
+};
 
-const browserClose: AgentTool = {
+export const browserCloseTool: ToolDefinition = {
   name: "browser_close",
+  label: "Browser Close",
   description: "Close the browser and free resources.",
-  input_schema: Type.Object({}) as any,
+  parameters: Type.Object({}),
   async execute() {
     if (!browserEnabled()) return textResult(BROWSER_DISABLED_MSG);
     const result = runBrowser("close");
     return textResult(result || "Browser closed");
   },
-} as any;
+};
 
 /**
  * All browser tools for registration with Pi SDK.
  * Only active when BROWSER_ENABLED=true.
  */
-export const browserTools: AgentTool[] = [
-  browserOpen,
-  browserSnapshot,
-  browserClick,
-  browserFill,
-  browserGetText,
-  browserScreenshot,
-  browserEval,
-  browserClose,
+export const browserTools: ToolDefinition[] = [
+  browserOpenTool,
+  browserSnapshotTool,
+  browserClickTool,
+  browserFillTool,
+  browserGetTextTool,
+  browserScreenshotTool,
+  browserEvalTool,
+  browserCloseTool,
 ];
