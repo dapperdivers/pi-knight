@@ -33,7 +33,7 @@ function runBrowser(args: string, timeoutMs = 30000): string {
 }
 
 function textResult(text: string): AgentToolResult<void> {
-  return { type: "tool_result", content: [{ type: "text", text }] } as AgentToolResult<void>;
+  return { content: [{ type: "text", text }], details: undefined };
 }
 
 const OpenParams = Type.Object({
