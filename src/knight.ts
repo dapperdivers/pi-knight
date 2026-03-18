@@ -10,6 +10,7 @@ import type { KnightConfig } from "./config.js";
 import { log } from "./logger.js";
 import { natsTools, setKnightName, setNatsPrefix } from "./tools/nats.js";
 import { subagentTools, setParentModel } from "./tools/subagent.js";
+import { browserTools } from "./tools/browser.js";
 
 export interface TaskResult {
   result: string;
@@ -82,7 +83,11 @@ async function getSession(config: KnightConfig): Promise<AgentSession> {
     thinkingLevel,
     cwd: "/data",
     agentDir: "/config",
-    customTools: [...natsTools, ...subagentTools],
+    customTools: [
+      ...natsTools,
+      ...subagentTools,
+      ...(process.env.BROWSER_ENABLED === "true" ? browserTools : []),
+    ],
     resourceLoader: new DefaultResourceLoader({
       cwd: "/data",
       agentDir: "/config",
