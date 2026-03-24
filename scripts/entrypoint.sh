@@ -231,6 +231,24 @@ else
   log "Phase 4.5: No vault mount — skipping"
 fi
 
+# Phase 4.9: Git credential setup
+# ──────────────────────────────────────────────────────────────────
+# Configure gh as the git credential helper so knights can push over HTTPS.
+# GH_TOKEN / GITHUB_TOKEN env vars are injected via secrets — gh CLI uses them
+# automatically, but git push needs credential.helper to bridge the gap.
+if command -v gh >/dev/null 2>&1; then
+  git config --global credential.helper '!gh auth git-credential'
+  log "Phase 4.9: Git credential helper configured (gh) ✓"
+elif [ -n "$GH_TOKEN" ]; then
+  # Fallback: write a static credential helper using GH_TOKEN directly
+  git config --global credential.helper store
+  echo "https://x-access-token:${GH_TOKEN}@github.com" > "$HOME/.git-credentials"
+  chmod 600 "$HOME/.git-credentials"
+  log "Phase 4.9: Git credential helper configured (token store) ✓"
+else
+  log "Phase 4.9: No git credentials available — push will fail"
+fi
+
 # Phase 5: Start the knight
 # ──────────────────────────────────────────────────────────────────
 # Set PATH with tool priority
