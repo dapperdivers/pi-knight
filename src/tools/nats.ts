@@ -10,7 +10,7 @@
  * derived from NATS_RESULTS_PREFIX at startup.
  */
 import { Type, type Static } from "@sinclair/typebox";
-import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
+import type { ToolDefinition, ExtensionContext, AgentToolUpdateCallback } from "@mariozechner/pi-coding-agent";
 import type { AgentToolResult } from "@mariozechner/pi-agent-core";
 import { getJetStream, getConnection, StringCodec } from "../nats.js";
 import { log } from "../logger.js";
@@ -70,7 +70,7 @@ export const natsPublishTool: ToolDefinition = {
     "Never publish empty messages",
   ],
   parameters: PublishParams,
-  async execute(_toolCallId, params: Static<typeof PublishParams>) {
+  async execute(_toolCallId: string, params: Static<typeof PublishParams>, _signal: AbortSignal | undefined, _onUpdate: AgentToolUpdateCallback<void> | undefined, _ctx: ExtensionContext) {
     const js = getJetStream();
     if (!js) return textResult("Error: NATS not connected");
 
@@ -145,7 +145,7 @@ export const natsRequestTool: ToolDefinition = {
     "Check the target knight's domain matches their NATS filter subject",
   ],
   parameters: RequestParams,
-  async execute(_toolCallId, params: Static<typeof RequestParams>, signal?: AbortSignal) {
+  async execute(_toolCallId: string, params: Static<typeof RequestParams>, signal: AbortSignal | undefined, _onUpdate: AgentToolUpdateCallback<void> | undefined, _ctx: ExtensionContext) {
     const js = getJetStream();
     const nc = getConnection();
     if (!js || !nc) return textResult("Error: NATS not connected");

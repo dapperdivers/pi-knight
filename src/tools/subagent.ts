@@ -6,7 +6,7 @@
  * The sub-agent executes, returns its result, and gets GC'd.
  */
 import { Type, type Static } from "@sinclair/typebox";
-import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
+import type { ToolDefinition, ExtensionContext, AgentToolUpdateCallback } from "@mariozechner/pi-coding-agent";
 import type { AgentToolResult } from "@mariozechner/pi-agent-core";
 import { getModel } from "@mariozechner/pi-ai";
 import { createAgentSession, DefaultResourceLoader } from "@mariozechner/pi-coding-agent";
@@ -49,7 +49,7 @@ export const spawnSubagentTool: ToolDefinition = {
     "Sub-agents have no memory of your session — provide all necessary context in the task description",
   ],
   parameters: SpawnParams,
-  async execute(_toolCallId, params: Static<typeof SpawnParams>, signal?: AbortSignal) {
+  async execute(_toolCallId: string, params: Static<typeof SpawnParams>, signal: AbortSignal | undefined, _onUpdate: AgentToolUpdateCallback<void> | undefined, _ctx: ExtensionContext) {
     const modelStr = params.model ?? parentModel;
     const slashIdx = modelStr.indexOf("/");
     const provider = slashIdx > 0 ? modelStr.slice(0, slashIdx) : "anthropic";
