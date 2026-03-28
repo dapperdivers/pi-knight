@@ -82,7 +82,7 @@ async function getSession(config: KnightConfig): Promise<AgentSession> {
     model,
     thinkingLevel,
     cwd: "/data",
-    agentDir: "/config",
+    agentDir: "/data",
     customTools: [
       ...natsTools,
       ...subagentTools,
@@ -90,7 +90,7 @@ async function getSession(config: KnightConfig): Promise<AgentSession> {
     ],
     resourceLoader: new DefaultResourceLoader({
       cwd: "/data",
-      agentDir: "/config",
+      agentDir: "/data",
       additionalSkillPaths: ["/skills"],
       noExtensions: true,
       noThemes: true,
