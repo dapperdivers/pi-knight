@@ -12,6 +12,7 @@ import { natsTools, setKnightName, setNatsPrefix } from "./tools/nats.js";
 import { subagentTools, setParentModel } from "./tools/subagent.js";
 import { browserTools } from "./tools/browser.js";
 import { setupToolHooks } from "./hooks.js";
+import { setupCompactionHook, updateSessionNotes } from "./memory.js";
 
 export interface TaskResult {
   result: string;
@@ -108,6 +109,9 @@ async function getSession(config: KnightConfig): Promise<AgentSession> {
 
   // Install tool hooks — safety guardrails, observability, metrics
   setupToolHooks(session);
+
+  // Install custom compaction hook — knight-specific context preservation
+  setupCompactionHook(session, config);
 
   // transformContext — prune old tool results when context exceeds token threshold
   const pruneThreshold = config.contextPruneTokens;
@@ -242,6 +246,11 @@ export async function executeTask(
 
   // Extract last assistant text
   const resultText = sess.getLastAssistantText() ?? "[No output from agent]";
+
+  // Update session notes after each task (fire-and-forget)
+  updateSessionNotes(config.knightName, task, resultText).catch((err) => {
+    log.warn("Failed to update session notes", { error: String(err) });
+  });
 
   log.info("Task completed", {
     inputTokens: taskTokens.input,

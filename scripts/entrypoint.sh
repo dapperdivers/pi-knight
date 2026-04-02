@@ -21,7 +21,7 @@ log() { echo "[entrypoint] $(date '+%H:%M:%S') $*"; }
 # Phase 1: Workspace seeding (from defaults + ConfigMap)
 # ──────────────────────────────────────────────────────────────────
 log "Phase 1: Workspace"
-mkdir -p /data/memory
+mkdir -p /data/memory /data/session-notes /data/scratch
 
 # Seed operational files from image defaults (only if missing on PVC)
 if [ -d /app/defaults ]; then
