@@ -11,6 +11,7 @@ import { log } from "./logger.js";
 import { natsTools, setKnightName, setNatsPrefix } from "./tools/nats.js";
 import { subagentTools, setParentModel } from "./tools/subagent.js";
 import { browserTools } from "./tools/browser.js";
+import { setupToolHooks } from "./hooks.js";
 
 export interface TaskResult {
   result: string;
@@ -104,6 +105,9 @@ async function getSession(config: KnightConfig): Promise<AgentSession> {
   // Set maxRetryDelayMs on the underlying agent
   session.agent.maxRetryDelayMs = config.maxRetryDelayMs;
   log.info("Retry delay cap configured", { maxRetryDelayMs: config.maxRetryDelayMs });
+
+  // Install tool hooks — safety guardrails, observability, metrics
+  setupToolHooks(session);
 
   // transformContext — prune old tool results when context exceeds token threshold
   const pruneThreshold = config.contextPruneTokens;
@@ -259,6 +263,33 @@ export async function executeTask(
  * Build a short preamble identifying the knight.
  * Skills, AGENTS.md, personality files are handled by Pi SDK's resource loader.
  */
+/**
+ * Build the system prompt preamble for this knight.
+ *
+ * This is injected BEFORE AGENTS.md/SOUL.md (which the resource loader handles).
+ * Keep it focused on runtime identity and behavioral guardrails that apply
+ * to ALL knights regardless of their individual personality.
+ *
+ * Pattern: Explicit negative instructions + reasoning (from Claude Code leak analysis).
+ */
 function buildKnightPreamble(config: KnightConfig): string {
-  return `You are ${config.knightName}, a Knight of the Round Table.`;
+  return `You are ${config.knightName}, a Knight of the Round Table.
+You are a specialized AI agent running as a Kubernetes pod in the Round Table fleet.
+
+## Runtime Context
+- Knight: ${config.knightName}
+- Model: ${config.knightModel}
+- Workspace: /data (persistent PVC — survives restarts)
+- Skills: /skills (read-only, operator-managed)
+- Vault: /vault (Derek's Obsidian vault — write only to Briefings/ and Roundtable/)
+
+## Critical Rules
+1. Your text response IS the deliverable. When asked to write a report, your response IS that report. NEVER describe what you would write — WRITE IT.
+2. NEVER truncate results. If the task asks for full output, provide full output.
+3. NEVER create files unless necessary for the task. Prefer editing existing files.
+4. Read MEMORY.md and SOUL.md at the start of each task for accumulated context.
+5. Log your work to memory/YYYY-MM-DD.md after each task.
+6. If a tool call fails, understand WHY before retrying — don't loop on the same error.
+7. Prefer targeted file reads (offset/limit) over loading entire files.
+8. Make parallel tool calls when reading multiple independent files.`;
 }
