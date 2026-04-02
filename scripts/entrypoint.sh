@@ -31,11 +31,24 @@ if [ -d /app/defaults ]; then
   done
 fi
 
-# Seed personality files from ConfigMap (only if missing on PVC)
+# Sync personality files from ConfigMap → PVC (hash-gated)
+# Only overwrites when ConfigMap content actually changed.
+# Knights can self-modify /data/ files, but CRD-driven changes win.
+mkdir -p /data/.config-hashes
 for f in SOUL.md IDENTITY.md TOOLS.md; do
-  if [ ! -f "/data/$f" ] && [ -f "/config/$f" ]; then
-    cp "/config/$f" "/data/$f"
-    log "  Seeded $f from ConfigMap"
+  if [ -f "/config/$f" ]; then
+    config_hash=$(md5sum "/config/$f" | cut -d' ' -f1)
+    stored_hash=""
+    [ -f "/data/.config-hashes/$f" ] && stored_hash=$(cat "/data/.config-hashes/$f")
+    if [ "$config_hash" != "$stored_hash" ]; then
+      cp "/config/$f" "/data/$f"
+      echo "$config_hash" > "/data/.config-hashes/$f"
+      if [ -z "$stored_hash" ]; then
+        log "  Seeded $f from ConfigMap"
+      else
+        log "  Updated $f from ConfigMap (hash changed)"
+      fi
+    fi
   fi
 done
 
