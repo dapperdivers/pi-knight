@@ -175,8 +175,8 @@ async function afterToolCall(
  * Wire beforeToolCall and afterToolCall hooks into the agent session.
  */
 export function setupToolHooks(session: AgentSession): void {
-  session.agent.setBeforeToolCall(beforeToolCall);
-  session.agent.setAfterToolCall(afterToolCall);
+  session.agent.beforeToolCall = beforeToolCall;
+  session.agent.afterToolCall = afterToolCall;
   log.info("Tool hooks installed (safety + observability)");
 }
 

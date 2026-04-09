@@ -61,8 +61,10 @@ async function getSession(config: KnightConfig): Promise<AgentSession> {
   // This enables local/custom OpenAI-compatible endpoints (e.g. LiteLLM → Ollama).
   if (!model) {
     const baseUrl = process.env.OPENAI_BASE_URL || process.env.OPENAI_API_BASE || "http://localhost:4000/v1";
+    const contextWindow = parseInt(process.env.MODEL_CONTEXT_WINDOW ?? "131072", 10);
+    const maxTokens = parseInt(process.env.MODEL_MAX_TOKENS ?? "16384", 10);
     log.info("Model not in registry, creating custom openai-completions model", {
-      provider, model: modelName, baseUrl
+      provider, model: modelName, baseUrl, contextWindow, maxTokens,
     });
     model = {
       id: modelName,
@@ -73,8 +75,15 @@ async function getSession(config: KnightConfig): Promise<AgentSession> {
       reasoning: false,
       input: ["text"],
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-      contextWindow: 32768,
-      maxTokens: 8192,
+      contextWindow,
+      maxTokens,
+      compat: {
+        supportsDeveloperRole: false,
+        supportsReasoningEffort: false,
+        supportsStrictMode: false,
+        supportsStore: false,
+        maxTokensField: "max_tokens",
+      },
     } as any;
   }
 

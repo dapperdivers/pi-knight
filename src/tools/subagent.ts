@@ -5,11 +5,10 @@
  * the same process — no K8s overhead, no NATS round-trip.
  * The sub-agent executes, returns its result, and gets GC'd.
  */
-import { Type, type Static } from "@sinclair/typebox";
-import type { ToolDefinition, ExtensionContext, AgentToolUpdateCallback } from "@mariozechner/pi-coding-agent";
+import { Type } from "@sinclair/typebox";
 import type { AgentToolResult } from "@mariozechner/pi-agent-core";
 import { getModel } from "@mariozechner/pi-ai";
-import { createAgentSession, DefaultResourceLoader } from "@mariozechner/pi-coding-agent";
+import { createAgentSession, DefaultResourceLoader, defineTool } from "@mariozechner/pi-coding-agent";
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import { log } from "../logger.js";
 
@@ -37,7 +36,7 @@ export function setParentModel(model: string): void {
   parentModel = model;
 }
 
-export const spawnSubagentTool: ToolDefinition = {
+export const spawnSubagentTool = defineTool({
   name: "spawn_subagent",
   label: "Spawn Sub-Agent",
   description:
@@ -49,7 +48,7 @@ export const spawnSubagentTool: ToolDefinition = {
     "Sub-agents have no memory of your session — provide all necessary context in the task description",
   ],
   parameters: SpawnParams,
-  async execute(_toolCallId: string, params: Static<typeof SpawnParams>, signal: AbortSignal | undefined, _onUpdate: AgentToolUpdateCallback<void> | undefined, _ctx: ExtensionContext) {
+  async execute(_toolCallId, params, signal, _onUpdate, _ctx) {
     const modelStr = params.model ?? parentModel;
     const slashIdx = modelStr.indexOf("/");
     const provider = slashIdx > 0 ? modelStr.slice(0, slashIdx) : "anthropic";
@@ -67,7 +66,31 @@ export const spawnSubagentTool: ToolDefinition = {
     const startTime = Date.now();
 
     try {
-      const model = getModel(provider as any, modelName as any);
+      let model = getModel(provider as any, modelName as any);
+
+      // Same fallback as the parent knight — proxy models aren't in the registry
+      if (!model) {
+        const baseUrl = process.env.OPENAI_BASE_URL || process.env.OPENAI_API_BASE || "http://localhost:4000/v1";
+        model = {
+          id: modelName,
+          name: modelName,
+          api: "openai-completions" as any,
+          provider: provider,
+          baseUrl,
+          reasoning: false,
+          input: ["text"],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: parseInt(process.env.MODEL_CONTEXT_WINDOW ?? "131072", 10),
+          maxTokens: parseInt(process.env.MODEL_MAX_TOKENS ?? "16384", 10),
+          compat: {
+            supportsDeveloperRole: false,
+            supportsReasoningEffort: false,
+            supportsStrictMode: false,
+            supportsStore: false,
+            maxTokensField: "max_tokens",
+          },
+        } as any;
+      }
 
       const { session } = await createAgentSession({
         model,
@@ -110,6 +133,6 @@ export const spawnSubagentTool: ToolDefinition = {
       return textResult(`Sub-agent error: ${msg}`);
     }
   },
-};
+});
 
-export const subagentTools: ToolDefinition[] = [spawnSubagentTool];
+export const subagentTools = [spawnSubagentTool];

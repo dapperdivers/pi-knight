@@ -9,8 +9,8 @@
  * Table-aware: all subjects use the knight's own NATS prefix,
  * derived from NATS_RESULTS_PREFIX at startup.
  */
-import { Type, type Static } from "@sinclair/typebox";
-import type { ToolDefinition, ExtensionContext, AgentToolUpdateCallback } from "@mariozechner/pi-coding-agent";
+import { Type } from "@sinclair/typebox";
+import { defineTool } from "@mariozechner/pi-coding-agent";
 import type { AgentToolResult } from "@mariozechner/pi-agent-core";
 import { getJetStream, getConnection, StringCodec } from "../nats.js";
 import { log } from "../logger.js";
@@ -51,7 +51,7 @@ function textResult(text: string): AgentToolResult<void> {
  * Your normal task results are published automatically by the runtime.
  * Only use this for OUT-OF-BAND messaging: alerts, reports, broadcasts.
  */
-export const natsPublishTool: ToolDefinition = {
+export const natsPublishTool = defineTool({
   name: "nats_publish",
   label: "NATS Publish",
   description: [
@@ -70,7 +70,7 @@ export const natsPublishTool: ToolDefinition = {
     "Never publish empty messages",
   ],
   parameters: PublishParams,
-  async execute(_toolCallId: string, params: Static<typeof PublishParams>, _signal: AbortSignal | undefined, _onUpdate: AgentToolUpdateCallback<void> | undefined, _ctx: ExtensionContext) {
+  async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
     const js = getJetStream();
     if (!js) return textResult("Error: NATS not connected");
 
@@ -89,7 +89,7 @@ export const natsPublishTool: ToolDefinition = {
       return textResult(`Error publishing to ${params.subject}: ${msg}`);
     }
   },
-};
+});
 
 /**
  * nats_request — Send a task to another knight and wait for their response.
@@ -104,7 +104,7 @@ export const natsPublishTool: ToolDefinition = {
  * IMPORTANT: Only request knights within YOUR OWN table. Cross-table
  * requests will timeout because subjects don't cross table boundaries.
  */
-export const natsRequestTool: ToolDefinition = {
+export const natsRequestTool = defineTool({
   name: "nats_request",
   label: "Knight Request",
   description: [
@@ -145,7 +145,7 @@ export const natsRequestTool: ToolDefinition = {
     "Check the target knight's domain matches their NATS filter subject",
   ],
   parameters: RequestParams,
-  async execute(_toolCallId: string, params: Static<typeof RequestParams>, signal: AbortSignal | undefined, _onUpdate: AgentToolUpdateCallback<void> | undefined, _ctx: ExtensionContext) {
+  async execute(_toolCallId, params, signal, _onUpdate, _ctx) {
     const js = getJetStream();
     const nc = getConnection();
     if (!js || !nc) return textResult("Error: NATS not connected");
@@ -225,9 +225,9 @@ export const natsRequestTool: ToolDefinition = {
       return textResult(`Error requesting from ${params.knight}: ${msg}`);
     }
   },
-};
+});
 
 /**
  * All NATS tools for registration with Pi SDK.
  */
-export const natsTools: ToolDefinition[] = [natsPublishTool, natsRequestTool];
+export const natsTools = [natsPublishTool, natsRequestTool];

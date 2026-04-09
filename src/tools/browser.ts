@@ -10,8 +10,8 @@
  */
 
 import { execSync } from "child_process";
-import { Type, type Static } from "@sinclair/typebox";
-import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
+import { Type } from "@sinclair/typebox";
+import { defineTool } from "@mariozechner/pi-coding-agent";
 import type { AgentToolResult } from "@mariozechner/pi-agent-core";
 
 const BROWSER_DISABLED_MSG =
@@ -55,12 +55,12 @@ const OpenParams = Type.Object({
   url: Type.String({ description: "URL to navigate to" }),
 });
 
-export const browserOpenTool: ToolDefinition = {
+export const browserOpenTool = defineTool({
   name: "browser_open",
   label: "Browser Open",
   description: "Navigate the browser to a URL. Use for JS-rendered pages, SPAs, form interaction, or when curl is insufficient.",
   parameters: OpenParams,
-  async execute(_id: string, params: Static<typeof OpenParams>) {
+  async execute(_id, params) {
     if (!browserEnabled()) return textResult(BROWSER_DISABLED_MSG);
     try {
       return textResult(runBrowser(`open "${params.url}"`) || `Navigated to ${params.url}`);
@@ -68,9 +68,9 @@ export const browserOpenTool: ToolDefinition = {
       return textResult(`Error: ${err.message}`);
     }
   },
-};
+});
 
-export const browserSnapshotTool: ToolDefinition = {
+export const browserSnapshotTool = defineTool({
   name: "browser_snapshot",
   label: "Browser Snapshot",
   description:
@@ -84,18 +84,18 @@ export const browserSnapshotTool: ToolDefinition = {
       return textResult(`Error: ${err.message}`);
     }
   },
-};
+});
 
 const RefParams = Type.Object({
   ref: Type.String({ description: "Element ref from snapshot (e.g. @e2) or CSS selector" }),
 });
 
-export const browserClickTool: ToolDefinition = {
+export const browserClickTool = defineTool({
   name: "browser_click",
   label: "Browser Click",
   description: "Click an element by ref (from snapshot, e.g. @e5) or CSS selector.",
   parameters: RefParams,
-  async execute(_id: string, params: Static<typeof RefParams>) {
+  async execute(_id, params) {
     if (!browserEnabled()) return textResult(BROWSER_DISABLED_MSG);
     try {
       return textResult(runBrowser(`click "${params.ref}"`) || `Clicked ${params.ref}`);
@@ -103,19 +103,19 @@ export const browserClickTool: ToolDefinition = {
       return textResult(`Error: ${err.message}`);
     }
   },
-};
+});
 
 const FillParams = Type.Object({
   ref: Type.String({ description: "Element ref from snapshot or CSS selector" }),
   text: Type.String({ description: "Text to fill" }),
 });
 
-export const browserFillTool: ToolDefinition = {
+export const browserFillTool = defineTool({
   name: "browser_fill",
   label: "Browser Fill",
   description: "Clear and fill an input element with text. Uses ref from snapshot.",
   parameters: FillParams,
-  async execute(_id: string, params: Static<typeof FillParams>) {
+  async execute(_id, params) {
     if (!browserEnabled()) return textResult(BROWSER_DISABLED_MSG);
     try {
       return textResult(runBrowser(`fill "${params.ref}" "${params.text}"`) || `Filled ${params.ref}`);
@@ -123,14 +123,14 @@ export const browserFillTool: ToolDefinition = {
       return textResult(`Error: ${err.message}`);
     }
   },
-};
+});
 
-export const browserGetTextTool: ToolDefinition = {
+export const browserGetTextTool = defineTool({
   name: "browser_get_text",
   label: "Browser Get Text",
   description: "Get text content from a specific element.",
   parameters: RefParams,
-  async execute(_id: string, params: Static<typeof RefParams>) {
+  async execute(_id, params) {
     if (!browserEnabled()) return textResult(BROWSER_DISABLED_MSG);
     try {
       return textResult(runBrowser(`get text "${params.ref}"`));
@@ -138,9 +138,9 @@ export const browserGetTextTool: ToolDefinition = {
       return textResult(`Error: ${err.message}`);
     }
   },
-};
+});
 
-export const browserScreenshotTool: ToolDefinition = {
+export const browserScreenshotTool = defineTool({
   name: "browser_screenshot",
   label: "Browser Screenshot",
   description: "Take a screenshot of the current page.",
@@ -148,7 +148,7 @@ export const browserScreenshotTool: ToolDefinition = {
     path: Type.Optional(Type.String({ description: "File path to save screenshot" })),
     full: Type.Optional(Type.Boolean({ description: "Full page capture" })),
   }),
-  async execute(_id: string, params: { path?: string; full?: boolean }) {
+  async execute(_id, params) {
     if (!browserEnabled()) return textResult(BROWSER_DISABLED_MSG);
     try {
       let args = "screenshot";
@@ -159,18 +159,18 @@ export const browserScreenshotTool: ToolDefinition = {
       return textResult(`Error: ${err.message}`);
     }
   },
-};
+});
 
 const EvalParams = Type.Object({
   js: Type.String({ description: "JavaScript to evaluate in page context" }),
 });
 
-export const browserEvalTool: ToolDefinition = {
+export const browserEvalTool = defineTool({
   name: "browser_eval",
   label: "Browser Eval",
   description: "Evaluate JavaScript in the browser page context.",
   parameters: EvalParams,
-  async execute(_id: string, params: Static<typeof EvalParams>) {
+  async execute(_id, params) {
     if (!browserEnabled()) return textResult(BROWSER_DISABLED_MSG);
     try {
       const b64 = Buffer.from(params.js).toString("base64");
@@ -179,9 +179,9 @@ export const browserEvalTool: ToolDefinition = {
       return textResult(`Error: ${err.message}`);
     }
   },
-};
+});
 
-export const browserCloseTool: ToolDefinition = {
+export const browserCloseTool = defineTool({
   name: "browser_close",
   label: "Browser Close",
   description: "Close the browser page and free resources.",
@@ -194,13 +194,13 @@ export const browserCloseTool: ToolDefinition = {
       return textResult(`Error: ${err.message}`);
     }
   },
-};
+});
 
 /**
  * All browser tools — conditionally registered when BROWSER_ENABLED=true.
  * Uses agent-browser CLI for token-efficient accessibility tree interaction.
  */
-export const browserTools: ToolDefinition[] = [
+export const browserTools = [
   browserOpenTool, browserSnapshotTool, browserClickTool, browserFillTool,
   browserGetTextTool, browserScreenshotTool, browserEvalTool, browserCloseTool,
 ];
