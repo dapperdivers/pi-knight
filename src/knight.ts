@@ -170,22 +170,41 @@ async function getSession(config: KnightConfig): Promise<AgentSession> {
     });
   }
 
-  // onPayload observability hook — log model/token metadata for each LLM call
-  (session.agent as any)._onPayload = (payload: unknown, model: any) => {
+  // onPayload observability hook — log model/token metadata for each LLM call.
+  // NOTE: field is `onPayload` (no underscore). The previous `_onPayload` was a no-op.
+  session.agent.onPayload = async (payload: unknown, model: any) => {
     try {
       const p = payload as any;
-      const tokenEstimate = JSON.stringify(p).length / 4; // rough char-to-token estimate
-      log.debug("LLM payload", {
+      // Summary log at info level — safe to always emit
+      log.info("LLM request payload", {
         model: model?.id ?? model?.name ?? "unknown",
         provider: model?.provider ?? "unknown",
         messageCount: Array.isArray(p?.messages) ? p.messages.length : undefined,
-        estimatedTokens: Math.round(tokenEstimate),
-        maxTokens: p?.max_tokens,
-        thinkingBudget: p?.thinking?.budget_tokens,
+        toolCount: Array.isArray(p?.tools) ? p.tools.length : 0,
+        toolNames: Array.isArray(p?.tools) ? p.tools.map((t: any) => t?.function?.name ?? t?.name).filter(Boolean) : [],
+        hasToolChoice: p?.tool_choice !== undefined,
+        maxTokens: p?.max_tokens ?? p?.max_completion_tokens,
+        stream: p?.stream,
       });
-    } catch { /* observability must never break the agent */ }
-    return undefined; // pass through unmodified
+      // Full payload at debug level for diagnostics
+      log.debug("LLM request payload (full)", { payload: p });
+    } catch (err) {
+      log.warn("onPayload hook threw", { error: String(err) });
+    }
+    return payload; // pass through unmodified
   };
+
+  // Log active tool names at session create time so we can verify custom tools
+  // are actually registered with the agent (not just in the tool registry).
+  try {
+    const activeToolNames = (session.agent.state?.tools ?? []).map((t: any) => t?.name).filter(Boolean);
+    log.info("Agent active tools", {
+      count: activeToolNames.length,
+      names: activeToolNames,
+    });
+  } catch (err) {
+    log.warn("Failed to introspect active tools", { error: String(err) });
+  }
 
   // Capture baseline stats (session may have prior history from PVC)
   const stats = session.getSessionStats();
