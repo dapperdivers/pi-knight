@@ -8,7 +8,7 @@
 import { Type } from "@sinclair/typebox";
 import type { AgentToolResult } from "@mariozechner/pi-agent-core";
 import { getModel } from "@mariozechner/pi-ai";
-import { createAgentSession, DefaultResourceLoader, defineTool } from "@mariozechner/pi-coding-agent";
+import { createAgentSession, DefaultResourceLoader, AuthStorage, defineTool } from "@mariozechner/pi-coding-agent";
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import { log } from "../logger.js";
 
@@ -96,6 +96,7 @@ export const spawnSubagentTool = defineTool({
         model,
         thinkingLevel,
         cwd: "/data",
+        authStorage: AuthStorage.inMemory(),
         resourceLoader: new DefaultResourceLoader({
           cwd: "/data",
           noExtensions: true,
