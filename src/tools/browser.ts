@@ -10,7 +10,7 @@
  */
 
 import { execSync } from "child_process";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 

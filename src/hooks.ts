@@ -166,6 +166,12 @@ async function afterToolCall(
     return { content: sanitizedContent };
   }
 
+  // Signal the agent loop to stop after nats_publish — result is already published,
+  // no follow-up LLM call needed.
+  if (!isError && toolName === "nats_publish") {
+    return { terminate: true };
+  }
+
   return undefined; // pass through unmodified
 }
 

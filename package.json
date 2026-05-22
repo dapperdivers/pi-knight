@@ -14,9 +14,9 @@
     "@earendil-works/pi-agent-core": "^0.75.4",
     "@earendil-works/pi-ai": "^0.75.4",
     "@earendil-works/pi-coding-agent": "^0.75.4",
-    "@sinclair/typebox": "^0.34.49",
     "nats": "^2.29.3",
-    "prom-client": "^15.1.0"
+    "prom-client": "^15.1.0",
+    "typebox": "^1.1.38"
   },
   "devDependencies": {
     "@types/node": "^22.19.19",

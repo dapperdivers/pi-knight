@@ -5,7 +5,7 @@
  * the same process — no K8s overhead, no NATS round-trip.
  * The sub-agent executes, returns its result, and gets GC'd.
  */
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import { getModel } from "@earendil-works/pi-ai";
 import { createAgentSession, DefaultResourceLoader, AuthStorage, defineTool } from "@earendil-works/pi-coding-agent";

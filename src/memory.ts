@@ -20,49 +20,6 @@ const SESSION_NOTES_DIR = "/data/session-notes";
 const SESSION_NOTES_FILE = `${SESSION_NOTES_DIR}/current.md`;
 const SCRATCH_DIR = "/data/scratch";
 
-// ─── Custom Compaction Prompt ───────────────────────────────────
-
-/**
- * Knight-specific compaction instructions.
- * Injected into Pi SDK's auto-compaction to preserve Round Table context.
- *
- * Based on Claude Code's context-compaction-summary prompt, adapted for
- * the knight execution model (NATS tasks, vault writes, tool patterns).
- */
-const KNIGHT_COMPACTION_INSTRUCTIONS = `
-You are a Knight of the Round Table performing context compaction. Your summary
-will replace this conversation history, so it must preserve everything needed
-to continue working effectively.
-
-Focus on preserving:
-
-1. **Task Context** — What NATS task(s) were executed? What was the task description?
-   Include task IDs if mentioned.
-
-2. **Current State** — What was being worked on most recently? What is the current
-   state of the work? This is the MOST CRITICAL section — without it, the knight
-   loses continuity after compaction.
-
-3. **Files Touched** — Every file path that was read, written, or modified.
-   Include vault paths (/vault/...) and workspace paths (/data/...).
-
-4. **Tool Patterns That Worked** — If a particular tool invocation or bash command
-   proved effective, preserve the exact command. If something failed, note why.
-
-5. **Decisions and Rationale** — Why was approach X chosen over Y?
-   Preserve the reasoning, not just the outcome.
-
-6. **Promises and Commitments** — If the knight committed to writing a file,
-   updating memory, or reporting back, preserve that commitment.
-
-7. **Errors and Corrections** — What went wrong and how was it fixed?
-   What should NOT be tried again?
-
-Be concise but complete. Err on the side of including information that prevents
-duplicate work or repeated mistakes. Convert any relative time references to
-absolute dates/times.
-`.trim();
-
 /**
  * Hook into Pi SDK's compaction events to inject custom instructions.
  *
@@ -71,7 +28,11 @@ absolute dates/times.
  * the session's event subscription.
  */
 export function setupCompactionHook(session: AgentSession, config: KnightConfig): void {
-  session.subscribe((event) => {
+  // Cast needed until the installed package type catches up to 0.65.0 listener signature
+  // (listeners are async and receive an AbortSignal as second argument)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  type AnyListener = (event: any, _signal: any) => Promise<void>;
+  const listener: AnyListener = async (event, _signal) => {
     if (event.type === "compaction_start") {
       log.info("Context compaction starting", {
         knight: config.knightName,
@@ -84,6 +45,7 @@ export function setupCompactionHook(session: AgentSession, config: KnightConfig)
         reason: event.reason,
         aborted: event.aborted,
         hasResult: !!event.result,
+        willRetry: event.willRetry,
       });
     }
     if (event.type === "auto_retry_start") {
@@ -106,7 +68,9 @@ export function setupCompactionHook(session: AgentSession, config: KnightConfig)
         });
       }
     }
-  });
+  };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  session.subscribe(listener as any);
 
   log.info("Session hooks installed (compaction + retry observability)");
 }
