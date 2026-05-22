@@ -2,7 +2,7 @@ import { loadConfig } from "./config.js";
 import { initLogger, log } from "./logger.js";
 import { connectNats, subscribe, publishResult, drain } from "./nats.js";
 import { startHealthServer, stopHealthServer, setSkillCount, setActiveTaskCount } from "./health.js";
-import { loadSkills } from "@mariozechner/pi-coding-agent";
+import { loadSkills } from "@earendil-works/pi-coding-agent";
 import { executeTask } from "./knight.js";
 import { startIntrospect } from "./introspect.js";
 import * as metrics from "./metrics.js";

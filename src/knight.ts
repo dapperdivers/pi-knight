@@ -1,12 +1,12 @@
-import { getModel } from "@mariozechner/pi-ai";
+import { getModel } from "@earendil-works/pi-ai";
 import {
   createAgentSession,
   DefaultResourceLoader,
   AuthStorage,
   type AgentSession,
   type SessionStats,
-} from "@mariozechner/pi-coding-agent";
-import type { ThinkingLevel, AgentMessage } from "@mariozechner/pi-agent-core";
+} from "@earendil-works/pi-coding-agent";
+import type { ThinkingLevel, AgentMessage } from "@earendil-works/pi-agent-core";
 import type { KnightConfig } from "./config.js";
 import { log } from "./logger.js";
 import { natsTools, setKnightName, setNatsPrefix } from "./tools/nats.js";

@@ -7,7 +7,7 @@ This is the same skill system that powers OpenClaw — no custom walker needed.
 
 ## How It Works
 
-1. **Discovery**: `loadSkills()` from `@mariozechner/pi-coding-agent` recursively scans skill directories
+1. **Discovery**: `loadSkills()` from `@earendil-works/pi-coding-agent` recursively scans skill directories
 2. **Parsing**: Reads SKILL.md files with YAML frontmatter (name, description)
 3. **Prompt Injection**: `formatSkillsForPrompt()` generates XML `<available_skills>` block per [agentskills.io spec](https://agentskills.io/integrate-skills)
 4. **Deduplication**: Resolves symlinks via `realpathSync` to avoid loading duplicates from git-sync worktrees

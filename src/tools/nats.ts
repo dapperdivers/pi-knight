@@ -10,8 +10,8 @@
  * derived from NATS_RESULTS_PREFIX at startup.
  */
 import { Type } from "@sinclair/typebox";
-import { defineTool } from "@mariozechner/pi-coding-agent";
-import type { AgentToolResult } from "@mariozechner/pi-agent-core";
+import { defineTool } from "@earendil-works/pi-coding-agent";
+import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import { getJetStream, getConnection, StringCodec } from "../nats.js";
 import { log } from "../logger.js";
 

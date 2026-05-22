@@ -22,6 +22,10 @@ Pi-Knight Pod (Kubernetes)
 **Models:** Any LLM via `pi-ai` — Claude, GPT, Gemini, Ollama, etc.  
 **Observability:** Structured JSON logs, Prometheus metrics, cost tracking
 
+For provider experiments, the runtime can optionally write
+`$HOME/.pi/agent/models.json` from `PI_MODELS_JSON` or `PI_MODELS_JSON_B64`
+at startup, which makes native-provider canaries possible without a custom image.
+
 ## Documentation
 
 | Doc | Description |

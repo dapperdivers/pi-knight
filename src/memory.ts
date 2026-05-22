@@ -10,7 +10,7 @@
  */
 import { writeFile, mkdir, readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import type { AgentSession } from "@mariozechner/pi-coding-agent";
+import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import type { KnightConfig } from "./config.js";
 import { log } from "./logger.js";
 

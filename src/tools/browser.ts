@@ -11,8 +11,8 @@
 
 import { execSync } from "child_process";
 import { Type } from "@sinclair/typebox";
-import { defineTool } from "@mariozechner/pi-coding-agent";
-import type { AgentToolResult } from "@mariozechner/pi-agent-core";
+import { defineTool } from "@earendil-works/pi-coding-agent";
+import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 
 const BROWSER_DISABLED_MSG =
   "Browser capability not enabled. Set spec.capabilities.browser: true in Knight CR.";

@@ -53,6 +53,24 @@ for f in SOUL.md IDENTITY.md TOOLS.md; do
 done
 
 # ──────────────────────────────────────────────────────────────────
+# Phase 1.5: Optional Pi model provider bootstrap
+# ──────────────────────────────────────────────────────────────────
+# Allows per-knight native provider configuration (for example Ollama)
+# without baking ~/.pi/agent/models.json into the image.
+if [ -n "${PI_MODELS_JSON_B64:-}" ] || [ -n "${PI_MODELS_JSON:-}" ]; then
+  mkdir -p "$HOME/.pi/agent"
+  if [ -n "${PI_MODELS_JSON_B64:-}" ]; then
+    printf '%s' "$PI_MODELS_JSON_B64" | base64 -d > "$HOME/.pi/agent/models.json"
+    log "Phase 1.5: Wrote ~/.pi/agent/models.json from PI_MODELS_JSON_B64"
+  else
+    printf '%s\n' "$PI_MODELS_JSON" > "$HOME/.pi/agent/models.json"
+    log "Phase 1.5: Wrote ~/.pi/agent/models.json from PI_MODELS_JSON"
+  fi
+else
+  log "Phase 1.5: No custom Pi model config — skipping"
+fi
+
+# ──────────────────────────────────────────────────────────────────
 # Phase 2: Nix bootstrap (first boot only)
 # ──────────────────────────────────────────────────────────────────
 NIX_PROFILE="$HOME/.nix-profile"

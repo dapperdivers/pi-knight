@@ -10,8 +10,8 @@ import type {
   BeforeToolCallResult,
   AfterToolCallContext,
   AfterToolCallResult,
-} from "@mariozechner/pi-agent-core";
-import type { AgentSession } from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-agent-core";
+import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import { log } from "./logger.js";
 import { toolCallsTotal, toolCallDuration, toolCallErrors, toolCallsBlocked } from "./metrics.js";
 

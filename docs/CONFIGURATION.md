@@ -45,6 +45,8 @@ Knights can evolve their own files over time — ConfigMap seeds the initial sta
 |----------|-------------|---------|
 | `KNIGHT_MODEL` | LLM provider/model | `anthropic/claude-sonnet-4-5` |
 | `KNIGHT_THINKING` | Thinking level (off/minimal/low/medium/high) | `off` |
+| `PI_MODELS_JSON` | Raw `~/.pi/agent/models.json` content to write at startup | unset |
+| `PI_MODELS_JSON_B64` | Base64-encoded `~/.pi/agent/models.json` content | unset |
 | `ANTHROPIC_API_KEY` | Anthropic API key | From ExternalSecret |
 | `OPENAI_API_KEY` | OpenAI API key (if using GPT models) | From ExternalSecret |
 | `GEMINI_API_KEY` | Google API key (if using Gemini) | From ExternalSecret |
@@ -149,3 +151,28 @@ spec:
 | Patsy | Claude Haiku 3.5 | Vault metadata is mechanical, high volume |
 
 These are starting points — adjust based on observed task quality and cost.
+
+## Native Provider Override
+
+For experiments where Pi SDK should use a native provider config instead of only
+`KNIGHT_MODEL`, inject a Pi models file at startup:
+
+```yaml
+env:
+  - name: KNIGHT_MODEL
+    value: "local/gemma4-26b"
+  - name: PI_MODELS_JSON_B64
+    valueFrom:
+      secretKeyRef:
+        name: galahad-secret
+        key: PI_MODELS_JSON_B64
+```
+
+At startup, `entrypoint.sh` writes the provided content to:
+
+```text
+$HOME/.pi/agent/models.json
+```
+
+This is intended for canary deployments such as native Ollama experiments,
+without changing the default fleet path.

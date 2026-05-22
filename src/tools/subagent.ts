@@ -6,10 +6,10 @@
  * The sub-agent executes, returns its result, and gets GC'd.
  */
 import { Type } from "@sinclair/typebox";
-import type { AgentToolResult } from "@mariozechner/pi-agent-core";
-import { getModel } from "@mariozechner/pi-ai";
-import { createAgentSession, DefaultResourceLoader, AuthStorage, defineTool } from "@mariozechner/pi-coding-agent";
-import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
+import type { AgentToolResult } from "@earendil-works/pi-agent-core";
+import { getModel } from "@earendil-works/pi-ai";
+import { createAgentSession, DefaultResourceLoader, AuthStorage, defineTool } from "@earendil-works/pi-coding-agent";
+import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { log } from "../logger.js";
 
 const SpawnParams = Type.Object({
@@ -96,9 +96,11 @@ export const spawnSubagentTool = defineTool({
         model,
         thinkingLevel,
         cwd: "/data",
+        agentDir: "/data",
         authStorage: AuthStorage.inMemory(),
         resourceLoader: new DefaultResourceLoader({
           cwd: "/data",
+          agentDir: "/data",
           noExtensions: true,
           noThemes: true,
           noPromptTemplates: true,
