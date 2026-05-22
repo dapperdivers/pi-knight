@@ -16,6 +16,17 @@ import { setupToolHooks } from "./hooks.js";
 import { setupCompactionHook, updateSessionNotes } from "./memory.js";
 import { getBestAssistantResult } from "./result-extraction.js";
 
+function buildAuthStorage(): AuthStorage {
+  const refreshToken = process.env.ANTHROPIC_OAUTH_REFRESH_TOKEN;
+  if (refreshToken) {
+    log.info("Using Anthropic OAuth (Max subscription)");
+    return AuthStorage.inMemory({
+      anthropic: { type: "oauth", access: "", refresh: refreshToken, expires: 0 },
+    });
+  }
+  return AuthStorage.inMemory();
+}
+
 export interface TaskResult {
   result: string;
   cost: number;
@@ -91,15 +102,15 @@ async function getSession(config: KnightConfig): Promise<AgentSession> {
 
   const thinkingLevel = (config.thinkingLevel ?? "off") as ThinkingLevel;
 
-  // Use in-memory auth storage — we only use env-var API keys for proxy models,
-  // and file-backed storage creates a /data/auth.json lock that can deadlock if
-  // a previous pod was SIGKILLed mid-lock-acquire.
+  // Use in-memory auth storage — avoids /data/auth.json lock deadlocks on SIGKILL.
+  // If ANTHROPIC_OAUTH_REFRESH_TOKEN is set, pre-populate with OAuth credentials so
+  // the SDK can use the Claude Max subscription instead of an API key.
   const { session: newSession } = await createAgentSession({
     model,
     thinkingLevel,
     cwd: "/data",
     agentDir: "/data",
-    authStorage: AuthStorage.inMemory(),
+    authStorage: buildAuthStorage(),
     customTools: [
       ...natsTools,
       ...subagentTools,
