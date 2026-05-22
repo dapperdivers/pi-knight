@@ -1,4 +1,3 @@
-import { rmSync, existsSync } from "node:fs";
 import { getModel } from "@earendil-works/pi-ai";
 import {
   createAgentSession,
@@ -17,33 +16,6 @@ import { setupToolHooks } from "./hooks.js";
 import { setupCompactionHook, updateSessionNotes } from "./memory.js";
 import { getBestAssistantResult } from "./result-extraction.js";
 
-function buildAuthStorage(): AuthStorage {
-  const refreshToken = process.env.ANTHROPIC_OAUTH_REFRESH_TOKEN;
-  if (refreshToken) {
-    log.info("Using Anthropic OAuth (Max subscription)");
-    delete process.env.ANTHROPIC_API_KEY;
-
-    // Use file-backed storage so the SDK can persist rotated tokens across pod restarts.
-    // Remove any stale lockfile left by a previous SIGKILL before creating the storage.
-    const authPath = "/data/auth.json";
-    const lockPath = `${authPath}.lock`;
-    if (existsSync(lockPath)) {
-      log.warn("Removing stale auth lockfile", { lockPath });
-      rmSync(lockPath, { recursive: true, force: true });
-    }
-
-    const storage = AuthStorage.create(authPath);
-    // Only seed from env var on first boot — after that the persisted (rotated) token is used.
-    if (!storage.has("anthropic")) {
-      log.info("Seeding OAuth token from env var (first boot)");
-      storage.set("anthropic", { type: "oauth", access: "", refresh: refreshToken, expires: 0 });
-    } else {
-      log.info("Using persisted OAuth token from disk");
-    }
-    return storage;
-  }
-  return AuthStorage.inMemory();
-}
 
 export interface TaskResult {
   result: string;
@@ -128,7 +100,7 @@ async function getSession(config: KnightConfig): Promise<AgentSession> {
     thinkingLevel,
     cwd: "/data",
     agentDir: "/data",
-    authStorage: buildAuthStorage(),
+    authStorage: AuthStorage.inMemory(),
     customTools: [
       ...natsTools,
       ...subagentTools,
