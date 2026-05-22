@@ -122,6 +122,10 @@ async function getSession(config: KnightConfig): Promise<AgentSession> {
   session.agent.maxRetryDelayMs = config.maxRetryDelayMs;
   log.info("Retry delay cap configured", { maxRetryDelayMs: config.maxRetryDelayMs });
 
+  // Enable parallel tool execution — agent runs independent tool calls concurrently.
+  // Matches the system prompt instruction to maximise parallel tool calls where possible.
+  session.agent.toolExecution = "parallel";
+
   // Install tool hooks — safety guardrails, observability, metrics
   setupToolHooks(session);
 

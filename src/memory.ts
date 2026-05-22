@@ -71,7 +71,6 @@ absolute dates/times.
  * the session's event subscription.
  */
 export function setupCompactionHook(session: AgentSession, config: KnightConfig): void {
-  // Subscribe to session events for compaction logging
   session.subscribe((event) => {
     if (event.type === "compaction_start") {
       log.info("Context compaction starting", {
@@ -87,17 +86,29 @@ export function setupCompactionHook(session: AgentSession, config: KnightConfig)
         hasResult: !!event.result,
       });
     }
+    if (event.type === "auto_retry_start") {
+      log.warn("LLM auto-retry triggered", {
+        knight: config.knightName,
+        attempt: event.attempt,
+        maxAttempts: event.maxAttempts,
+        delayMs: event.delayMs,
+        error: event.errorMessage,
+      });
+    }
+    if (event.type === "auto_retry_end") {
+      if (event.success) {
+        log.info("LLM auto-retry succeeded", { knight: config.knightName, attempt: event.attempt });
+      } else {
+        log.error("LLM auto-retry exhausted", {
+          knight: config.knightName,
+          attempt: event.attempt,
+          finalError: event.finalError,
+        });
+      }
+    }
   });
 
-  log.info("Compaction hook installed (knight-specific context preservation)");
-}
-
-/**
- * Get the custom compaction instructions for injection into Pi SDK.
- * Called when configuring the session's compaction behavior.
- */
-export function getCompactionInstructions(): string {
-  return KNIGHT_COMPACTION_INSTRUCTIONS;
+  log.info("Session hooks installed (compaction + retry observability)");
 }
 
 // ─── Session Notes ──────────────────────────────────────────────
