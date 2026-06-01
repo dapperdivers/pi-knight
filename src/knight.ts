@@ -1,12 +1,12 @@
-import { getModel } from "@earendil-works/pi-ai";
 import {
   createAgentSession,
   DefaultResourceLoader,
-  AuthStorage,
+  estimateTokens,
   type AgentSession,
   type SessionStats,
 } from "@earendil-works/pi-coding-agent";
 import type { ThinkingLevel, AgentMessage } from "@earendil-works/pi-agent-core";
+import { resolveModel } from "./model.js";
 import type { KnightConfig } from "./config.js";
 import { log } from "./logger.js";
 import { natsTools, setKnightName, setNatsPrefix } from "./tools/nats.js";
@@ -48,9 +48,7 @@ let promptLock: Promise<void> = Promise.resolve();
 async function getSession(config: KnightConfig): Promise<AgentSession> {
   if (session) return session;
 
-  const slashIdx = config.knightModel.indexOf("/");
-  const provider = slashIdx > 0 ? config.knightModel.slice(0, slashIdx) : "anthropic";
-  const modelName = slashIdx > 0 ? config.knightModel.slice(slashIdx + 1) : config.knightModel;
+  const { model, provider, modelName, authStorage, modelRegistry } = resolveModel(config.knightModel);
 
   log.info("Creating persistent session", { provider, model: modelName });
 
@@ -58,49 +56,16 @@ async function getSession(config: KnightConfig): Promise<AgentSession> {
   // Derive NATS prefix from results prefix (e.g. "rt-dev.results" → "rt-dev")
   setNatsPrefix(config.natsResultsPrefix.replace(/\.results$/, ""));
   setParentModel(config.knightModel);
-  let model = getModel(provider as any, modelName as any);
-
-  // If model not found in registry, create a custom model definition.
-  // This enables local/custom OpenAI-compatible endpoints (e.g. LiteLLM → Ollama).
-  if (!model) {
-    const baseUrl = process.env.OPENAI_BASE_URL || process.env.OPENAI_API_BASE || "http://localhost:4000/v1";
-    const contextWindow = parseInt(process.env.MODEL_CONTEXT_WINDOW ?? "131072", 10);
-    const maxTokens = parseInt(process.env.MODEL_MAX_TOKENS ?? "16384", 10);
-    log.info("Model not in registry, creating custom openai-completions model", {
-      provider, model: modelName, baseUrl, contextWindow, maxTokens,
-    });
-    model = {
-      id: modelName,
-      name: modelName,
-      api: "openai-completions" as any,
-      provider: provider,
-      baseUrl,
-      reasoning: false,
-      input: ["text"],
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-      contextWindow,
-      maxTokens,
-      compat: {
-        supportsDeveloperRole: false,
-        supportsReasoningEffort: false,
-        supportsStrictMode: false,
-        supportsStore: false,
-        maxTokensField: "max_tokens",
-      },
-    } as any;
-  }
 
   const thinkingLevel = (config.thinkingLevel ?? "off") as ThinkingLevel;
 
-  // Use in-memory auth storage — avoids /data/auth.json lock deadlocks on SIGKILL.
-  // If ANTHROPIC_OAUTH_REFRESH_TOKEN is set, pre-populate with OAuth credentials so
-  // the SDK can use the Claude Max subscription instead of an API key.
   const { session: newSession } = await createAgentSession({
     model,
     thinkingLevel,
     cwd: "/data",
     agentDir: "/data",
-    authStorage: AuthStorage.inMemory(),
+    authStorage,
+    modelRegistry,
     customTools: [
       ...natsTools,
       ...subagentTools,
@@ -136,11 +101,7 @@ async function getSession(config: KnightConfig): Promise<AgentSession> {
   // transformContext — prune old tool results when context exceeds token threshold
   const pruneThreshold = config.contextPruneTokens;
   (session.agent as any).transformContext = async (messages: AgentMessage[]): Promise<AgentMessage[]> => {
-    const totalChars = messages.reduce((sum, m) => {
-      const content = (m as any).content;
-      return sum + (typeof content === "string" ? content.length : JSON.stringify(content ?? "").length);
-    }, 0);
-    const estimatedTokens = Math.round(totalChars / 4);
+    const estimatedTokens = messages.reduce((sum, m) => sum + estimateTokens(m), 0);
 
     if (estimatedTokens <= pruneThreshold) return messages;
 

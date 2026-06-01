@@ -21,11 +21,11 @@ const SESSION_NOTES_FILE = `${SESSION_NOTES_DIR}/current.md`;
 const SCRATCH_DIR = "/data/scratch";
 
 /**
- * Hook into Pi SDK's compaction events to inject custom instructions.
+ * Subscribe to Pi SDK compaction/retry events for observability only.
  *
- * The Pi SDK fires compaction_start/compaction_end events. We listen for these
- * to log compaction activity. The actual custom instructions are applied via
- * the session's event subscription.
+ * This logs compaction_start/end and auto_retry_start/end — it does NOT modify
+ * compaction behavior or inject instructions. Knight-specific context is preserved
+ * via the session-notes file (see updateSessionNotes), not here.
  */
 export function setupCompactionHook(session: AgentSession, config: KnightConfig): void {
   // Cast needed until the installed package type catches up to 0.65.0 listener signature
