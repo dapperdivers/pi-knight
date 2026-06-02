@@ -28,6 +28,37 @@ export function parseModelStr(modelStr: string): { provider: string; modelName: 
 }
 
 /**
+ * OpenRouter routing-variant suffixes. These pick a routing strategy/variant
+ * (e.g. cheapest provider) without changing which catalog model runs, so the
+ * registry has no exact catalog entry for the suffixed slug. We strip them for
+ * the catalog lookup (to keep baseUrl + pricing) but send the full slug to the
+ * API so OpenRouter still applies the variant.
+ * https://openrouter.ai/docs/features/provider-routing
+ *
+ * Cost-tracking accuracy varies by suffix (pricing always comes from the base
+ * catalog entry):
+ *  - `:floor` / `:nitro` — same model, just provider selection. Accurate. This
+ *    is the intended use case.
+ *  - `:free` — routes to a $0 variant priced as paid → reported cost is an
+ *    over-estimate. (Some community models exist *only* as `:free` with no paid
+ *    base; those miss the stripped lookup and land in the localhost fallback.)
+ *  - `:online` — adds OpenRouter's web-search plugin (per-request fee on top of
+ *    the base) → reported cost is an under-estimate.
+ * Genuine model-variant suffixes (`:thinking`, `:extended`, `:beta`) are
+ * deliberately *not* listed: they are distinct catalog entries with their own
+ * pricing, so they should fall through to an exact match, not be stripped.
+ */
+const ROUTING_SUFFIXES = new Set(["floor", "nitro", "free", "online", "exacto"]);
+
+/** Split a trailing routing suffix (e.g. ":floor") off a model name for catalog lookup. */
+export function splitRoutingSuffix(modelName: string): { base: string; suffix?: string } {
+  const colonIdx = modelName.lastIndexOf(":");
+  if (colonIdx === -1) return { base: modelName };
+  const suffix = modelName.slice(colonIdx + 1);
+  return ROUTING_SUFFIXES.has(suffix) ? { base: modelName.slice(0, colonIdx), suffix } : { base: modelName };
+}
+
+/**
  * Resolve a model + auth for a "provider/model" string.
  *
  * In-memory AuthStorage avoids /data/auth.json lock deadlocks on SIGKILL. The
@@ -41,6 +72,9 @@ export function parseModelStr(modelStr: string): { provider: string; modelName: 
  */
 export function resolveModel(modelStr: string): ResolvedModel {
   const { provider, modelName } = parseModelStr(modelStr);
+  // Strip any routing-variant suffix for the catalog lookup; the full slug
+  // (with suffix) is still what we send to the API via model.id below.
+  const { base: lookupName, suffix: routingSuffix } = splitRoutingSuffix(modelName);
 
   const authStorage = AuthStorage.inMemory();
   const modelRegistry = ModelRegistry.create(authStorage, MODELS_JSON);
@@ -50,9 +84,17 @@ export function resolveModel(modelStr: string): ResolvedModel {
   }
 
   // Registry first (built-in + custom models.json); getModel is a redundant built-in fallback.
-  let model = (modelRegistry.find(provider, modelName) ?? getModel(provider as any, modelName as any)) as
+  let model = (modelRegistry.find(provider, lookupName) ?? getModel(provider as any, lookupName as any)) as
     | Model<Api>
     | undefined;
+
+  // Catalog hit on the base slug: clone (the registry returns a shared reference)
+  // and restore the routing suffix on the id so OpenRouter applies the variant
+  // while pricing/baseUrl come from the catalog entry.
+  if (model && routingSuffix) {
+    log.info("Applying routing suffix to resolved model", { model: lookupName, suffix: routingSuffix });
+    model = { ...model, id: modelName } as Model<Api>;
+  }
 
   if (!model) {
     const baseUrl = process.env.OPENAI_BASE_URL || process.env.OPENAI_API_BASE || "http://localhost:4000/v1";
