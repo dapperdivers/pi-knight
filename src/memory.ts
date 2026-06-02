@@ -10,7 +10,7 @@
  */
 import { writeFile, mkdir, readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import type { AgentSession } from "@earendil-works/pi-coding-agent";
+import type { AgentSession, AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import type { KnightConfig } from "./config.js";
 import { log } from "./logger.js";
 
@@ -28,11 +28,7 @@ const SCRATCH_DIR = "/data/scratch";
  * via the session-notes file (see updateSessionNotes), not here.
  */
 export function setupCompactionHook(session: AgentSession, config: KnightConfig): void {
-  // Cast needed until the installed package type catches up to 0.65.0 listener signature
-  // (listeners are async and receive an AbortSignal as second argument)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  type AnyListener = (event: any, _signal: any) => Promise<void>;
-  const listener: AnyListener = async (event, _signal) => {
+  const listener = (event: AgentSessionEvent): void => {
     if (event.type === "compaction_start") {
       log.info("Context compaction starting", {
         knight: config.knightName,
@@ -69,8 +65,7 @@ export function setupCompactionHook(session: AgentSession, config: KnightConfig)
       }
     }
   };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  session.subscribe(listener as any);
+  session.subscribe(listener);
 
   log.info("Session hooks installed (compaction + retry observability)");
 }

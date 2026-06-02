@@ -29,8 +29,8 @@ function textResult(text: string): AgentToolResult<void> {
   return { content: [{ type: "text", text }], details: undefined };
 }
 
-/** Parent knight's model — set during init */
-let parentModel: string = "anthropic/claude-sonnet-4-5";
+/** Parent knight's model — overwritten via setParentModel() during session init */
+let parentModel: string = "openrouter/deepseek/deepseek-v3.2";
 
 export function setParentModel(model: string): void {
   parentModel = model;

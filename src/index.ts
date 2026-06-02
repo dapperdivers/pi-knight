@@ -3,7 +3,7 @@ import { initLogger, log } from "./logger.js";
 import { connectNats, subscribe, publishResult, drain } from "./nats.js";
 import { startHealthServer, stopHealthServer, setSkillCount, setActiveTaskCount } from "./health.js";
 import { loadSkills } from "@earendil-works/pi-coding-agent";
-import { executeTask } from "./knight.js";
+import { executeTask, getActiveSession } from "./knight.js";
 import { startIntrospect } from "./introspect.js";
 import * as metrics from "./metrics.js";
 
@@ -163,6 +163,14 @@ async function main(): Promise<void> {
     }
     if (activeCount > 0) {
       log.warn("Forcing shutdown with active tasks", { activeCount });
+    }
+
+    // Dispose the session to abort any in-flight agent/compaction/retry/bash work
+    // (pi 0.77+ disposal cancels in-flight work) before we tear down NATS.
+    try {
+      getActiveSession()?.dispose();
+    } catch (e) {
+      log.error("Session dispose error", { error: String(e) });
     }
 
     await drain().catch((e) => log.error("NATS drain error", { error: String(e) }));

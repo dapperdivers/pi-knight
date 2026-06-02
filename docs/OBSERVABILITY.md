@@ -22,7 +22,7 @@ All logs are JSON, compatible with Loki/Promtail ingestion on the dapper-cluster
   "msg": "Task completed",
   "duration_ms": 45000,
   "cost": 0.54,
-  "model": "anthropic/claude-sonnet-4-5",
+  "model": "openrouter/deepseek/deepseek-v3.2",
   "tokens": { "input": 12000, "output": 8500 }
 }
 ```
@@ -71,7 +71,7 @@ pi_knight_task_duration_seconds_sum{knight="galahad"} 4523.7
 pi_knight_task_duration_seconds_count{knight="galahad"} 42
 
 # LLM cost tracking
-pi_knight_llm_cost_dollars_total{knight="galahad",model="claude-sonnet-4-5"} 23.47
+pi_knight_llm_cost_dollars_total{knight="galahad",model="openrouter/deepseek/deepseek-v3.2"} 23.47
 
 # Token usage
 pi_knight_tokens_total{knight="galahad",direction="input"} 504000
@@ -131,7 +131,7 @@ Returns 200 if NATS is connected and the agent is ready to accept tasks. Returns
   "pending_messages": 0,
   "active_tasks": 1,
   "max_concurrent": 2,
-  "model": "anthropic/claude-sonnet-4-5",
+  "model": "openrouter/deepseek/deepseek-v3.2",
   "skills_loaded": 8
 }
 ```

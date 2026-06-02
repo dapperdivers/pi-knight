@@ -30,7 +30,9 @@ function requireEnv(name: string): string {
 export function loadConfig(): KnightConfig {
   return {
     knightName: requireEnv("KNIGHT_NAME"),
-    knightModel: process.env["KNIGHT_MODEL"] ?? "anthropic/claude-sonnet-4-5",
+    // Cheap, tool-capable, cache-enabled fleet default. Upgrade individual knights
+    // by setting KNIGHT_MODEL on their pod (e.g. openrouter/anthropic/claude-sonnet-4.6).
+    knightModel: process.env["KNIGHT_MODEL"] ?? "openrouter/deepseek/deepseek-v3.2",
     subscribeTopics: requireEnv("SUBSCRIBE_TOPICS").split(",").map((s) => s.trim()),
     natsUrl: process.env["NATS_URL"] ?? "nats://nats.database.svc.cluster.local:4222",
     natsTasksStream: process.env["NATS_TASKS_STREAM"] ?? "fleet_a_tasks",

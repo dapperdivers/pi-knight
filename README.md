@@ -1,6 +1,6 @@
 # Pi-Knight 🛡️
 
-> Universal base agent runtime for the Knights of the Round Table, built on [Pi SDK](https://github.com/badlogic/pi-mono).
+> Universal base agent runtime for the Knights of the Round Table, built on [Pi SDK](https://github.com/earendil-works/pi-mono).
 
 ## What Is This?
 
@@ -23,7 +23,7 @@ Pi-Knight Pod (Kubernetes)
 **Observability:** Structured JSON logs, Prometheus metrics, cost tracking
 
 For provider experiments, the runtime can optionally write
-`$HOME/.pi/agent/models.json` from `PI_MODELS_JSON` or `PI_MODELS_JSON_B64`
+`/data/models.json` from `PI_MODELS_JSON` or `PI_MODELS_JSON_B64`
 at startup, which makes native-provider canaries possible without a custom image.
 
 ## Documentation
@@ -36,7 +36,6 @@ at startup, which makes native-provider canaries possible without a custom image
 | [Skills](docs/SKILLS.md) | Skill system, arsenal bridge, tool policies |
 | [Configuration](docs/CONFIGURATION.md) | Per-knight config, model selection, env vars |
 | [Security](docs/SECURITY.md) | Isolation model, threat model, OWASP LLM mitigations |
-| [Migration](docs/MIGRATION.md) | Migration path from knight-agent |
 
 ## Quick Start
 
@@ -44,8 +43,10 @@ at startup, which makes native-provider canaries possible without a custom image
 # Install dependencies
 npm install
 
-# Set API key
-export ANTHROPIC_API_KEY=sk-ant-...
+# Set API key — the default model routes through OpenRouter
+export OPENROUTER_API_KEY=sk-or-...
+# For a native-provider model instead, set its key + KNIGHT_MODEL:
+#   export ANTHROPIC_API_KEY=sk-ant-... && export KNIGHT_MODEL=anthropic/claude-sonnet-4.6
 
 # Run locally (requires NATS)
 npm run dev
@@ -53,26 +54,27 @@ npm run dev
 
 ## Knights
 
-| Knight | Domain | Default Model | Skills |
-|--------|--------|---------------|--------|
-| Galahad | Security & Threat Intel | Claude Sonnet 4.5 | security |
-| Percival | Finance & Tax | Claude Haiku 3.5 | finance |
-| Lancelot | Career & Professional | Claude Sonnet 4.5 | career |
-| Tristan | Infrastructure & HomeLab | Claude Sonnet 4.5 | infra |
-| Bedivere | Household & Life Admin | GPT-4o | home |
-| Kay | Research & Entertainment | Gemini 2.5 Pro | research, intel |
-| Patsy | Vault Curator | Claude Haiku 3.5 | vault |
+| Knight | Domain | Skills |
+|--------|--------|--------|
+| Galahad | Security & Threat Intel | security |
+| Percival | Finance & Tax | finance |
+| Lancelot | Career & Professional | career |
+| Tristan | Infrastructure & HomeLab | infra |
+| Bedivere | Household & Life Admin | home |
+| Kay | Research & Entertainment | research, intel |
+| Patsy | Vault Curator | vault |
+
+The model is per-knight configuration via `KNIGHT_MODEL`; the fleet default is
+`openrouter/deepseek/deepseek-v3.2`. See [Configuration](docs/CONFIGURATION.md).
 
 ## Why Pi?
 
-The previous runtime (`knight-agent`) wrapped the Claude Agent SDK, which spawns Claude Code CLI as a subprocess. That's two layers of indirection, Claude-only, and ~400MB.
-
-Pi-Knight uses Pi's SDK directly:
-- **Direct LLM access** — no subprocess spawning
-- **Multi-provider** — use the right model for the task
+Pi-Knight uses Pi's SDK directly — native API calls, no CLI subprocess, no provider lock-in:
+- **Direct LLM access** — native API calls, no subprocess spawning
+- **Multi-provider** — any model via `pi-ai` (OpenRouter, Anthropic, OpenAI, Gemini, Ollama, …)
 - **Built-in skill system** — sessions, compaction, extensions
-- **Smaller footprint** — ~200MB target
-- **Hackable** — TypeScript, well-documented, same stack as OpenClaw
+- **Small footprint** — just the packages
+- **Hackable** — TypeScript, well-documented
 
 ## License
 

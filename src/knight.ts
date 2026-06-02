@@ -100,7 +100,7 @@ async function getSession(config: KnightConfig): Promise<AgentSession> {
 
   // transformContext — prune old tool results when context exceeds token threshold
   const pruneThreshold = config.contextPruneTokens;
-  (session.agent as any).transformContext = async (messages: AgentMessage[]): Promise<AgentMessage[]> => {
+  session.agent.transformContext = async (messages: AgentMessage[]): Promise<AgentMessage[]> => {
     const estimatedTokens = messages.reduce((sum, m) => sum + estimateTokens(m), 0);
 
     if (estimatedTokens <= pruneThreshold) return messages;

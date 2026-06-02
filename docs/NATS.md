@@ -85,7 +85,7 @@ Use for: asking another knight a question, delegating subtasks, gathering cross-
   "duration_ms": 45000,
   "cost": 0.12,
   "tokens": { "input": 5000, "output": 2000 },
-  "model": "anthropic/claude-sonnet-4-5",
+  "model": "openrouter/deepseek/deepseek-v3.2",
   "tool_calls": 3,
   "timestamp": "2026-02-23T18:00:45.000Z"
 }

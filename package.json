@@ -11,9 +11,9 @@
     "test": "tsx --test tests/**/*.test.ts"
   },
   "dependencies": {
-    "@earendil-works/pi-agent-core": "^0.75.4",
-    "@earendil-works/pi-ai": "^0.75.4",
-    "@earendil-works/pi-coding-agent": "^0.75.4",
+    "@earendil-works/pi-agent-core": "^0.78.0",
+    "@earendil-works/pi-ai": "^0.78.0",
+    "@earendil-works/pi-coding-agent": "^0.78.0",
     "nats": "^2.29.3",
     "prom-client": "^15.1.0",
     "typebox": "^1.1.38"

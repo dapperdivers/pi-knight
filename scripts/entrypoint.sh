@@ -56,15 +56,16 @@ done
 # Phase 1.5: Optional Pi model provider bootstrap
 # ──────────────────────────────────────────────────────────────────
 # Allows per-knight native provider configuration (for example Ollama)
-# without baking ~/.pi/agent/models.json into the image.
+# without baking models.json into the image. Written to /data/models.json —
+# the runtime's agentDir is /data, so that is where ModelRegistry reads it.
 if [ -n "${PI_MODELS_JSON_B64:-}" ] || [ -n "${PI_MODELS_JSON:-}" ]; then
-  mkdir -p "$HOME/.pi/agent"
+  mkdir -p /data
   if [ -n "${PI_MODELS_JSON_B64:-}" ]; then
-    printf '%s' "$PI_MODELS_JSON_B64" | base64 -d > "$HOME/.pi/agent/models.json"
-    log "Phase 1.5: Wrote ~/.pi/agent/models.json from PI_MODELS_JSON_B64"
+    printf '%s' "$PI_MODELS_JSON_B64" | base64 -d > /data/models.json
+    log "Phase 1.5: Wrote /data/models.json from PI_MODELS_JSON_B64"
   else
-    printf '%s\n' "$PI_MODELS_JSON" > "$HOME/.pi/agent/models.json"
-    log "Phase 1.5: Wrote ~/.pi/agent/models.json from PI_MODELS_JSON"
+    printf '%s\n' "$PI_MODELS_JSON" > /data/models.json
+    log "Phase 1.5: Wrote /data/models.json from PI_MODELS_JSON"
   fi
 else
   log "Phase 1.5: No custom Pi model config — skipping"
