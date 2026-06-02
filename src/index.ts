@@ -97,6 +97,7 @@ async function main(): Promise<void> {
       metrics.llmCost.labels(config.knightName, result.model).inc(result.cost);
       metrics.tokensTotal.labels(config.knightName, "input").inc(result.tokens.input);
       metrics.tokensTotal.labels(config.knightName, "output").inc(result.tokens.output);
+      metrics.tokensTotal.labels(config.knightName, "cached").inc(result.tokens.cacheRead);
     } catch (err: unknown) {
       const durationMs = Date.now() - startTime;
       const errMsg = err instanceof Error ? err.message : String(err);

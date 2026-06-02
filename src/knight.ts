@@ -1,11 +1,9 @@
 import {
   createAgentSession,
   DefaultResourceLoader,
-  estimateTokens,
   type AgentSession,
-  type SessionStats,
 } from "@earendil-works/pi-coding-agent";
-import type { ThinkingLevel, AgentMessage } from "@earendil-works/pi-agent-core";
+import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { resolveModel } from "./model.js";
 import type { KnightConfig } from "./config.js";
 import { log } from "./logger.js";
@@ -20,7 +18,7 @@ import { getBestAssistantResult } from "./result-extraction.js";
 export interface TaskResult {
   result: string;
   cost: number;
-  tokens: { input: number; output: number };
+  tokens: { input: number; output: number; cacheRead: number };
   model: string;
   toolCalls: number;
 }
@@ -32,9 +30,6 @@ let session: AgentSession | null = null;
 export function getActiveSession(): AgentSession | null {
   return session;
 }
-let cumulativeCostBefore = 0;
-let cumulativeToolCallsBefore = 0;
-let cumulativeTokensBefore = { input: 0, output: 0 };
 
 // Serialize prompt() calls — Pi SDK sessions handle one prompt at a time
 let promptLock: Promise<void> = Promise.resolve();
@@ -98,31 +93,10 @@ async function getSession(config: KnightConfig): Promise<AgentSession> {
   // Install custom compaction hook — knight-specific context preservation
   setupCompactionHook(session, config);
 
-  // transformContext — prune old tool results when context exceeds token threshold
-  const pruneThreshold = config.contextPruneTokens;
-  session.agent.transformContext = async (messages: AgentMessage[]): Promise<AgentMessage[]> => {
-    const estimatedTokens = messages.reduce((sum, m) => sum + estimateTokens(m), 0);
-
-    if (estimatedTokens <= pruneThreshold) return messages;
-
-    log.info("Context pruning triggered", { estimatedTokens, threshold: pruneThreshold, messageCount: messages.length });
-    let pruned = 0;
-    // Prune from oldest, skip the last few messages to preserve recency
-    const result = messages.map((m, i) => {
-      if (i >= messages.length - 4) return m; // keep recent messages intact
-      const role = (m as any).role;
-      if (role === "tool_result" || role === "tool") {
-        const content = (m as any).content;
-        if (typeof content === "string" && content.length > 500) {
-          pruned++;
-          return { ...m, content: content.slice(0, 500) + "\n[…truncated by context pruning]" } as AgentMessage;
-        }
-      }
-      return m;
-    });
-    if (pruned > 0) log.info("Context pruning complete", { prunedMessages: pruned });
-    return result;
-  };
+  // Context reduction is handled entirely by Pi's built-in compaction (summarizes and
+  // resets the prefix cleanly when context approaches the window). We deliberately do NOT
+  // install a transformContext prune: truncating old messages mutates the prompt prefix and
+  // busts provider prompt caching, which is the main cost lever for these persistent sessions.
 
   // thinkingBudgets — set custom token budgets if thinking is enabled
   if (thinkingLevel !== "off") {
@@ -173,12 +147,8 @@ async function getSession(config: KnightConfig): Promise<AgentSession> {
     log.warn("Failed to introspect active tools", { error: String(err) });
   }
 
-  // Capture baseline stats (session may have prior history from PVC)
+  // Log baseline stats (session may have prior history from PVC)
   const stats = session.getSessionStats();
-  cumulativeCostBefore = stats.cost;
-  cumulativeToolCallsBefore = stats.toolCalls;
-  cumulativeTokensBefore = { input: stats.tokens.input, output: stats.tokens.output };
-
   log.info("Persistent session created", {
     sessionId: stats.sessionId,
     priorMessages: stats.totalMessages,
@@ -212,7 +182,11 @@ export async function executeTask(
   const statsBefore = sess.getSessionStats();
   const costBefore = statsBefore.cost;
   const toolCallsBefore = statsBefore.toolCalls;
-  const tokensBefore = { input: statsBefore.tokens.input, output: statsBefore.tokens.output };
+  const tokensBefore = {
+    input: statsBefore.tokens.input,
+    output: statsBefore.tokens.output,
+    cacheRead: statsBefore.tokens.cacheRead,
+  };
 
   log.info("Executing task", { model: config.knightModel, taskLength: task.length });
 
@@ -242,6 +216,7 @@ export async function executeTask(
   const taskTokens = {
     input: statsAfter.tokens.input - tokensBefore.input,
     output: statsAfter.tokens.output - tokensBefore.output,
+    cacheRead: statsAfter.tokens.cacheRead - tokensBefore.cacheRead,
   };
 
   // Extract the most recent real deliverable, not an intermediate tool-call payload.
@@ -252,8 +227,15 @@ export async function executeTask(
     log.warn("Failed to update session notes", { error: String(err) });
   });
 
+  // Prompt-cache hit rate = cached / (fresh input + cached). Surfaces whether the
+  // stable prefix is actually being reused (the main cost lever for these sessions).
+  const billedInput = taskTokens.input + taskTokens.cacheRead;
+  const cacheHitRate = billedInput > 0 ? taskTokens.cacheRead / billedInput : 0;
+
   log.info("Task completed", {
     inputTokens: taskTokens.input,
+    cachedInputTokens: taskTokens.cacheRead,
+    cacheHitRate: Number(cacheHitRate.toFixed(2)),
     outputTokens: taskTokens.output,
     cost: taskCost,
     toolCalls: taskToolCalls,

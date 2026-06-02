@@ -15,7 +15,6 @@ export interface KnightConfig {
   hostname: string;
   thinkingLevel: string;
   maxRetryDelayMs: number;
-  contextPruneTokens: number;
   thinkingBudgetLow: number;
   thinkingBudgetMedium: number;
   thinkingBudgetHigh: number;
@@ -45,7 +44,6 @@ export function loadConfig(): KnightConfig {
     hostname: os.hostname(),
     thinkingLevel: process.env["KNIGHT_THINKING"] ?? "off",
     maxRetryDelayMs: parseInt(process.env["MAX_RETRY_DELAY_MS"] ?? "60000", 10),
-    contextPruneTokens: parseInt(process.env["CONTEXT_PRUNE_TOKENS"] ?? "100000", 10),
     thinkingBudgetLow: parseInt(process.env["THINKING_BUDGET_LOW"] ?? "1024", 10),
     thinkingBudgetMedium: parseInt(process.env["THINKING_BUDGET_MEDIUM"] ?? "4096", 10),
     thinkingBudgetHigh: parseInt(process.env["THINKING_BUDGET_HIGH"] ?? "8192", 10),
