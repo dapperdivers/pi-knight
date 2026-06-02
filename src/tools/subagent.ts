@@ -7,10 +7,11 @@
  */
 import { Type } from "typebox";
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
-import { createAgentSession, DefaultResourceLoader, defineTool } from "@earendil-works/pi-coding-agent";
+import { createAgentSession, DefaultResourceLoader, defineTool, type AgentSession } from "@earendil-works/pi-coding-agent";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { resolveModel } from "../model.js";
 import { log } from "../logger.js";
+import * as metrics from "../metrics.js";
 
 const SpawnParams = Type.Object({
   task: Type.String({ description: "Task for the sub-agent to execute" }),
@@ -34,6 +35,13 @@ let parentModel: string = "openrouter/deepseek/deepseek-v3.2";
 
 export function setParentModel(model: string): void {
   parentModel = model;
+}
+
+/** Parent knight's name — used to attribute sub-agent spend in fleet metrics */
+let parentKnight = "unknown";
+
+export function setParentKnight(name: string): void {
+  parentKnight = name;
 }
 
 export const spawnSubagentTool = defineTool({
@@ -61,12 +69,13 @@ export const spawnSubagentTool = defineTool({
     });
 
     const startTime = Date.now();
+    let session: AgentSession | undefined;
 
     try {
       // Shared resolution — same model/auth handling as the parent knight.
       const { model, authStorage, modelRegistry } = resolveModel(modelStr);
 
-      const { session } = await createAgentSession({
+      ({ session } = await createAgentSession({
         model,
         thinkingLevel,
         cwd: "/data",
@@ -82,11 +91,11 @@ export const spawnSubagentTool = defineTool({
           noSkills: true, // Sub-agents are focused — no skill discovery overhead
           systemPrompt,
         }),
-      });
+      }));
 
       // Wire abort signal
       if (signal) {
-        signal.addEventListener("abort", () => session.abort(), { once: true });
+        signal.addEventListener("abort", () => session?.abort(), { once: true });
       }
 
       await session.prompt(params.task);
@@ -95,10 +104,20 @@ export const spawnSubagentTool = defineTool({
       const stats = session.getSessionStats();
       const durationMs = Date.now() - startTime;
 
+      // Attribute sub-agent spend to the parent knight so chains aren't invisible in
+      // fleet metrics. The sub-session is fresh per spawn, so its absolute stats ARE this
+      // spawn's total (no diff needed). Clamp finite/non-negative — same guard as the
+      // parent task accounting — to stay safe with routing/custom models.
+      const finite = (n: number) => (Number.isFinite(n) ? Math.max(0, n) : 0);
+      metrics.llmCost.labels(parentKnight, modelStr).inc(finite(stats.cost));
+      metrics.tokensTotal.labels(parentKnight, "input").inc(finite(stats.tokens.input));
+      metrics.tokensTotal.labels(parentKnight, "output").inc(finite(stats.tokens.output));
+      metrics.tokensTotal.labels(parentKnight, "cached").inc(finite(stats.tokens.cacheRead));
+
       log.info("Sub-agent completed", {
         durationMs,
         cost: stats.cost,
-        tokens: { input: stats.tokens.input, output: stats.tokens.output },
+        tokens: { input: stats.tokens.input, output: stats.tokens.output, cacheRead: stats.tokens.cacheRead },
         toolCalls: stats.toolCalls,
       });
 
@@ -109,6 +128,10 @@ export const spawnSubagentTool = defineTool({
       const msg = err instanceof Error ? err.message : String(err);
       log.error("Sub-agent failed", { error: msg });
       return textResult(`Sub-agent error: ${msg}`);
+    } finally {
+      // Dispose the ephemeral sub-session so it doesn't leak (each spawn creates a fresh
+      // session). dispose() also aborts any in-flight work if we exit via error/abort.
+      session?.dispose();
     }
   },
 });

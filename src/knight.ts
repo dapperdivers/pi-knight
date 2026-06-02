@@ -8,7 +8,7 @@ import { resolveModel } from "./model.js";
 import type { KnightConfig } from "./config.js";
 import { log } from "./logger.js";
 import { natsTools, setKnightName, setNatsPrefix } from "./tools/nats.js";
-import { subagentTools, setParentModel } from "./tools/subagent.js";
+import { subagentTools, setParentModel, setParentKnight } from "./tools/subagent.js";
 import { browserTools } from "./tools/browser.js";
 import { setupToolHooks } from "./hooks.js";
 import { setupCompactionHook, updateSessionNotes } from "./memory.js";
@@ -51,6 +51,7 @@ async function getSession(config: KnightConfig): Promise<AgentSession> {
   // Derive NATS prefix from results prefix (e.g. "rt-dev.results" → "rt-dev")
   setNatsPrefix(config.natsResultsPrefix.replace(/\.results$/, ""));
   setParentModel(config.knightModel);
+  setParentKnight(config.knightName);
 
   const thinkingLevel = (config.thinkingLevel ?? "off") as ThinkingLevel;
 
