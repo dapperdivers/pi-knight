@@ -209,14 +209,24 @@ export async function executeTask(
     releaseLock!();
   }
 
-  // Diff stats to get this task's contribution
+  // Diff stats to get this task's contribution. Clamp at 0: session-cumulative stats
+  // are normally monotonic, but routing models (e.g. openrouter/auto) can switch the
+  // underlying model between turns and report usage non-monotonically, yielding a negative
+  // delta. A negative value would throw in prom-client (Counter.inc cannot decrease) and
+  // crash the task in the stats layer, so we never let a per-task delta go below zero.
   const statsAfter = sess.getSessionStats();
-  const taskCost = statsAfter.cost - costBefore;
-  const taskToolCalls = statsAfter.toolCalls - toolCallsBefore;
+  // Non-negative AND finite: routing/custom models can report missing or non-monotonic
+  // usage, yielding a negative or NaN diff — either of which throws in prom-client.
+  const delta = (after: number, before: number) => {
+    const d = after - before;
+    return Number.isFinite(d) ? Math.max(0, d) : 0;
+  };
+  const taskCost = delta(statsAfter.cost, costBefore);
+  const taskToolCalls = delta(statsAfter.toolCalls, toolCallsBefore);
   const taskTokens = {
-    input: statsAfter.tokens.input - tokensBefore.input,
-    output: statsAfter.tokens.output - tokensBefore.output,
-    cacheRead: statsAfter.tokens.cacheRead - tokensBefore.cacheRead,
+    input: delta(statsAfter.tokens.input, tokensBefore.input),
+    output: delta(statsAfter.tokens.output, tokensBefore.output),
+    cacheRead: delta(statsAfter.tokens.cacheRead, tokensBefore.cacheRead),
   };
 
   // Extract the most recent real deliverable, not an intermediate tool-call payload.
