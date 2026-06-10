@@ -56,7 +56,7 @@ export const spawnSubagentTool = defineTool({
     "Sub-agents have no memory of your session — provide all necessary context in the task description",
   ],
   parameters: SpawnParams,
-  async execute(_toolCallId, params, signal, _onUpdate, _ctx) {
+  async execute(_toolCallId, params, signal, onUpdate, _ctx) {
     const modelStr = params.model ?? parentModel;
     const thinkingLevel = (params.thinking ?? "off") as ThinkingLevel;
 
@@ -70,6 +70,8 @@ export const spawnSubagentTool = defineTool({
 
     const startTime = Date.now();
     let session: AgentSession | undefined;
+
+    onUpdate?.(textResult(`Spawning sub-agent (${modelStr})…`));
 
     try {
       // Shared resolution — same model/auth handling as the parent knight.
@@ -100,6 +102,7 @@ export const spawnSubagentTool = defineTool({
         signal.addEventListener("abort", () => session?.abort(), { once: true });
       }
 
+      onUpdate?.(textResult(`Sub-agent running…`));
       await session.prompt(params.task);
 
       const resultText = session.getLastAssistantText() ?? "[No output from sub-agent]";

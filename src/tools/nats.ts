@@ -145,7 +145,7 @@ export const natsRequestTool = defineTool({
     "Check the target knight's domain matches their NATS filter subject",
   ],
   parameters: RequestParams,
-  async execute(_toolCallId, params, signal, _onUpdate, _ctx) {
+  async execute(_toolCallId, params, signal, onUpdate, _ctx) {
     const js = getJetStream();
     const nc = getConnection();
     if (!js || !nc) return textResult("Error: NATS not connected");
@@ -168,6 +168,8 @@ export const natsRequestTool = defineTool({
       prefix: _natsPrefix,
     });
 
+    onUpdate?.(textResult(`Dispatching to ${params.knight} (${params.domain})…`));
+
     try {
       // Subscribe to result subject BEFORE publishing the task
       const sub = nc.subscribe(resultSubject, { max: 1, timeout: timeoutMs });
@@ -184,6 +186,7 @@ export const natsRequestTool = defineTool({
       });
       await js.publish(taskSubject, sc.encode(payload));
       log.info("nats_request: task published", { taskId, subject: taskSubject });
+      onUpdate?.(textResult(`Task sent to ${params.knight}; awaiting response (timeout ${Math.round(timeoutMs / 1000)}s)…`));
 
       // Wait for result
       for await (const msg of sub) {
