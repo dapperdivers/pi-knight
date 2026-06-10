@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { parseModelStr, splitRoutingSuffix } from "../src/model.ts";
+import { parseModelStr, splitRoutingSuffix, resolveModel } from "../src/model.ts";
 
 test("parseModelStr splits provider from model, defaulting to anthropic", () => {
   assert.deepEqual(parseModelStr("openrouter/deepseek/deepseek-v3.2"), {
@@ -33,4 +33,46 @@ test("splitRoutingSuffix does not treat thinking levels as routing suffixes", ()
 
 test("splitRoutingSuffix leaves unknown suffixes intact", () => {
   assert.deepEqual(splitRoutingSuffix("some/model:bogus"), { base: "some/model:bogus" });
+});
+
+test("resolveModel defaults the ollama provider to the local Ollama OpenAI endpoint", () => {
+  const prevBase = process.env.OPENAI_BASE_URL;
+  const prevApiBase = process.env.OPENAI_API_BASE;
+  delete process.env.OPENAI_BASE_URL;
+  delete process.env.OPENAI_API_BASE;
+  try {
+    const { model, provider, modelName } = resolveModel("ollama/llama3.1");
+    assert.equal(provider, "ollama");
+    assert.equal(modelName, "llama3.1");
+    assert.equal(model.baseUrl, "http://localhost:11434/v1");
+  } finally {
+    if (prevBase !== undefined) process.env.OPENAI_BASE_URL = prevBase;
+    if (prevApiBase !== undefined) process.env.OPENAI_API_BASE = prevApiBase;
+  }
+});
+
+test("resolveModel makes the fallback model's reasoning flag env-overridable", () => {
+  const prev = process.env.MODEL_REASONING;
+  try {
+    delete process.env.MODEL_REASONING;
+    assert.equal(resolveModel("ollama/gpt-oss:20b").model.reasoning, false, "defaults off");
+
+    process.env.MODEL_REASONING = "true";
+    assert.equal(resolveModel("ollama/gpt-oss:20b").model.reasoning, true, "opt-in for reasoning models");
+  } finally {
+    if (prev !== undefined) process.env.MODEL_REASONING = prev;
+    else delete process.env.MODEL_REASONING;
+  }
+});
+
+test("resolveModel honors an explicit OPENAI_BASE_URL over the ollama default", () => {
+  const prevBase = process.env.OPENAI_BASE_URL;
+  process.env.OPENAI_BASE_URL = "http://ollama.ai.svc.cluster.local:11434/v1";
+  try {
+    const { model } = resolveModel("ollama/llama3.1");
+    assert.equal(model.baseUrl, "http://ollama.ai.svc.cluster.local:11434/v1");
+  } finally {
+    if (prevBase !== undefined) process.env.OPENAI_BASE_URL = prevBase;
+    else delete process.env.OPENAI_BASE_URL;
+  }
 });

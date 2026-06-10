@@ -9,7 +9,22 @@ import { getModel, type Api, type Model } from "@earendil-works/pi-ai";
 import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
 import { log } from "./logger.js";
 
-const MODELS_JSON = "/data/models.json";
+// Custom-model catalog read by the SDK ModelRegistry. Defaults to the workspace PVC;
+// override (e.g. to a read-only ConfigMap mount like /config/models.json) via env so a
+// fleet can ship a declarative local-model catalog instead of the per-knight env triplet.
+const MODELS_JSON = process.env.MODELS_JSON_PATH || "/data/models.json";
+
+/**
+ * Default base URLs for known local OpenAI-compatible providers, keyed by the
+ * provider segment of a "provider/model" string. Mirrors the SDK's convention of
+ * letting the provider *name* drive endpoint/compat selection (see openai-completions
+ * detectCompat). Ollama serves an OpenAI-compatible API at /v1, so mapping the
+ * provider name "ollama" here means `KNIGHT_MODEL=ollama/<tag>` works with no extra
+ * env. An explicit OPENAI_BASE_URL still wins (e.g. a non-localhost cluster service).
+ */
+const LOCAL_PROVIDER_BASE_URLS: Record<string, string> = {
+  ollama: "http://localhost:11434/v1",
+};
 
 export interface ResolvedModel {
   model: Model<Api>;
@@ -97,11 +112,19 @@ export function resolveModel(modelStr: string): ResolvedModel {
   }
 
   if (!model) {
-    const baseUrl = process.env.OPENAI_BASE_URL || process.env.OPENAI_API_BASE || "http://localhost:4000/v1";
+    const baseUrl =
+      process.env.OPENAI_BASE_URL ||
+      process.env.OPENAI_API_BASE ||
+      LOCAL_PROVIDER_BASE_URLS[provider] ||
+      "http://localhost:4000/v1";
     const contextWindow = parseInt(process.env.MODEL_CONTEXT_WINDOW ?? "131072", 10);
     const maxTokens = parseInt(process.env.MODEL_MAX_TOKENS ?? "16384", 10);
+    // Reasoning is off by default (most local chat models), but opt-in for reasoning
+    // models served locally (e.g. gpt-oss) so pi surfaces their thinking instead of
+    // letting it ride along in an unparsed side field. Set MODEL_REASONING=true.
+    const reasoning = process.env.MODEL_REASONING === "true";
     log.info("Model not in registry, creating custom openai-completions model", {
-      provider, model: modelName, baseUrl, contextWindow, maxTokens,
+      provider, model: modelName, baseUrl, contextWindow, maxTokens, reasoning,
     });
     model = {
       id: modelName,
@@ -109,7 +132,7 @@ export function resolveModel(modelStr: string): ResolvedModel {
       api: "openai-completions",
       provider,
       baseUrl,
-      reasoning: false,
+      reasoning,
       input: ["text"],
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
       contextWindow,

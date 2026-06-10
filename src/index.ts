@@ -5,6 +5,8 @@ import { startHealthServer, stopHealthServer, setSkillCount, setActiveTaskCount 
 import { loadSkills } from "@earendil-works/pi-coding-agent";
 import { executeTask, getActiveSession } from "./knight.js";
 import { startIntrospect } from "./introspect.js";
+import { resolveModel } from "./model.js";
+import { preflightModel } from "./preflight.js";
 import * as metrics from "./metrics.js";
 
 async function main(): Promise<void> {
@@ -20,6 +22,13 @@ async function main(): Promise<void> {
   // Start health/metrics HTTP server
   startHealthServer(config);
   log.info("Health server started", { port: config.metricsPort });
+
+  // Preflight the model endpoint before doing anything else. For local endpoints
+  // (Ollama/LM Studio/LiteLLM) this fails fast on an unreachable endpoint or missing
+  // model and warns on Ollama context-truncation footguns; cloud endpoints are a no-op.
+  // Resolving here is throwaway (knight.ts re-resolves for the session) but shares the
+  // same baseUrl/default logic, so what we probe is exactly what the session will use.
+  await preflightModel(resolveModel(config.knightModel).model);
 
   // Discover skills using Pi SDK's built-in agentskills.io loader
   // Retry for git-sync race at startup
