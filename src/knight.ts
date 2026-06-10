@@ -12,19 +12,28 @@ import { subagentTools, setParentModel, setParentKnight } from "./tools/subagent
 import { browserTools } from "./tools/browser.js";
 import { setupToolHooks } from "./hooks.js";
 import { setupCompactionHook, updateSessionNotes } from "./memory.js";
-import { getBestAssistantResult } from "./result-extraction.js";
+import { getBestAssistantResult, resolveTaskOutcome } from "./result-extraction.js";
 
 
 export interface TaskResult {
   result: string;
+  /** False when the agent produced no deliverable output — the result is an error
+   *  message, not a real answer. Lets consumers see the failure honestly. (#31) */
+  success: boolean;
+  /** Populated when success is false. */
+  error?: string;
   cost: number;
   tokens: { input: number; output: number; cacheRead: number };
   model: string;
   toolCalls: number;
 }
 
-// Persistent session — reused across tasks
+// Persistent session — reused across tasks within a chain run
 let session: AgentSession | null = null;
+
+// The chain runId the current session belongs to. A task whose runId differs starts a
+// fresh session to prevent cross-run context bleed; tasks without a runId reuse it. (#31)
+let currentRunId: string | undefined;
 
 /** Get the active session (or null if not yet created). Used by introspect. */
 export function getActiveSession(): AgentSession | null {
@@ -172,12 +181,30 @@ export async function executeTask(
   task: string,
   config: KnightConfig,
   signal?: AbortSignal,
+  runId?: string,
 ): Promise<TaskResult> {
   // Serialize — wait for any in-flight prompt to finish
   const prevLock = promptLock;
   let releaseLock: () => void;
   promptLock = new Promise((resolve) => { releaseLock = resolve; });
   await prevLock;
+
+  // Start a fresh session when a new chain run begins (#31). This runs inside the
+  // serialized region so it can't race a concurrent task's prompt. runId is optional:
+  // ad-hoc/mission tasks (and older operators) omit it and keep reusing the session.
+  if (runId && runId !== currentRunId && session) {
+    log.info("New chain run — resetting agent session to avoid context bleed", {
+      previousRunId: currentRunId ?? null,
+      runId,
+    });
+    try {
+      session.dispose();
+    } catch (err) {
+      log.warn("Failed to dispose prior session on run change", { error: String(err) });
+    }
+    session = null;
+  }
+  if (runId) currentRunId = runId;
 
   const sess = await getSession(config);
 
@@ -233,7 +260,12 @@ export async function executeTask(
   };
 
   // Extract the most recent real deliverable, not an intermediate tool-call payload.
-  const resultText = getBestAssistantResult(sess) ?? "[No output from agent]";
+  // When the agent yields nothing deliverable, report an explicit failure instead of
+  // publishing a sentinel as a successful result, so consumers see the failure. (#31)
+  const { result: resultText, success, error } = resolveTaskOutcome(getBestAssistantResult(sess));
+  if (!success) {
+    log.warn("Agent produced no deliverable output", { taskLength: task.length, runId: runId ?? null });
+  }
 
   // Update session notes after each task (fire-and-forget)
   updateSessionNotes(config.knightName, task, resultText).catch((err) => {
@@ -256,6 +288,8 @@ export async function executeTask(
 
   return {
     result: resultText,
+    success,
+    error,
     cost: taskCost,
     tokens: taskTokens,
     model: config.knightModel,

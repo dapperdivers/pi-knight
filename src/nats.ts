@@ -24,6 +24,9 @@ export interface ParsedTask {
   dispatchedBy?: string;
   timestamp?: string;
   timeoutMs?: number;
+  /** Chain run identity (operator-assigned UUID). Used to start a fresh agent session
+   *  per run and avoid cross-run context bleed. Optional — absent for ad-hoc tasks. (#31) */
+  runId?: string;
 }
 
 /**
@@ -173,6 +176,7 @@ function buildTaskIterable(msgs: ConsumerMessages): AsyncIterable<ParsedTask> {
             // marshal an omitted int field as 0) would otherwise abort the task on the next
             // tick; normalize it to undefined so the knight's configured timeout applies. (#30)
             timeoutMs: normalizeTimeoutMs(json.metadata?.timeout_ms ?? json.metadata?.timeoutMs),
+            runId: json.runId ?? json.run_id,
           };
         } catch {
           // Not JSON — treat entire payload as task text

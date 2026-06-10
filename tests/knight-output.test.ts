@@ -4,6 +4,7 @@ import {
   extractTextFromAssistantContent,
   getBestAssistantResult,
   isDeliverableAssistantText,
+  resolveTaskOutcome,
 } from "../src/result-extraction.ts";
 
 type MockMessage = {
@@ -82,4 +83,18 @@ test("getBestAssistantResult uses getLastAssistantText when messages are unavail
     getBestAssistantResult(session(undefined, 'assistant to=functions.read {"path":"foo"}') as any),
     undefined,
   );
+});
+
+test("resolveTaskOutcome maps a real deliverable to a successful outcome", () => {
+  assert.deepEqual(resolveTaskOutcome("Here is the briefing."), {
+    result: "Here is the briefing.",
+    success: true,
+  });
+});
+
+test("resolveTaskOutcome maps no deliverable to an explicit failure, not a sentinel success (#31)", () => {
+  const outcome = resolveTaskOutcome(undefined);
+  assert.equal(outcome.success, false);
+  assert.equal(outcome.error, "Agent produced no deliverable output");
+  assert.equal(outcome.result, "Agent produced no deliverable output");
 });

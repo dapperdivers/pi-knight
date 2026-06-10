@@ -25,6 +25,21 @@ export function isDeliverableAssistantText(text: string): boolean {
   return !NON_DELIVERABLE_PATTERNS.some((pattern) => pattern.test(text));
 }
 
+/**
+ * Map an extracted deliverable (or undefined) to a task outcome. When the agent yields
+ * nothing deliverable, the outcome is an explicit failure with an error message — never a
+ * sentinel string published as a successful result. (#31)
+ */
+export function resolveTaskOutcome(deliverable: string | undefined): {
+  result: string;
+  success: boolean;
+  error?: string;
+} {
+  if (deliverable != null) return { result: deliverable, success: true };
+  const error = "Agent produced no deliverable output";
+  return { result: error, success: false, error };
+}
+
 export function getBestAssistantResult(sess: AgentSession): string | undefined {
   const messages = (sess as AgentSession & { messages?: Array<{ role?: string; content?: unknown; stopReason?: string }> }).messages;
   if (!Array.isArray(messages)) {

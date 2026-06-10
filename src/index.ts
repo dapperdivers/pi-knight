@@ -71,11 +71,11 @@ async function main(): Promise<void> {
 
   // Task execution state
   let activeCount = 0;
-  const taskQueue: Array<{ task: string; taskId: string; timeoutMs?: number }> = [];
+  const taskQueue: Array<{ task: string; taskId: string; timeoutMs?: number; runId?: string }> = [];
   let shuttingDown = false;
 
   // Process a single task
-  async function processTask(taskText: string, taskId: string, timeoutMs: number): Promise<void> {
+  async function processTask(taskText: string, taskId: string, timeoutMs: number, runId?: string): Promise<void> {
     activeCount++;
     setActiveTaskCount(activeCount);
     metrics.activeTasks.labels(config.knightName).set(activeCount);
@@ -85,14 +85,15 @@ async function main(): Promise<void> {
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-      const result = await executeTask(taskText, config, controller.signal);
+      const result = await executeTask(taskText, config, controller.signal, runId);
       const durationMs = Date.now() - startTime;
 
       await publishResult(taskId, {
         task_id: taskId,
         knight: config.knightName,
-        success: true,
+        success: result.success,
         result: result.result,
+        ...(result.error ? { error: result.error } : {}),
         duration_ms: durationMs,
         cost: result.cost,
         tokens: result.tokens,
@@ -101,7 +102,9 @@ async function main(): Promise<void> {
         timestamp: new Date().toISOString(),
       });
 
-      metrics.tasksTotal.labels(config.knightName, "success").inc();
+      // Token/cost are recorded regardless — a no-output task still spent them. Only the
+      // task-outcome counter reflects the honest success/failure. (#31)
+      metrics.tasksTotal.labels(config.knightName, result.success ? "success" : "error").inc();
       metrics.taskDuration.labels(config.knightName).observe(durationMs / 1000);
       metrics.llmCost.labels(config.knightName, result.model).inc(result.cost);
       metrics.tokensTotal.labels(config.knightName, "input").inc(result.tokens.input);
@@ -134,7 +137,7 @@ async function main(): Promise<void> {
 
       if (taskQueue.length > 0 && activeCount < config.maxConcurrentTasks) {
         const next = taskQueue.shift()!;
-        processTask(next.task, next.taskId, next.timeoutMs ?? config.taskTimeoutMs);
+        processTask(next.task, next.taskId, next.timeoutMs ?? config.taskTimeoutMs, next.runId);
       }
     }
   }
@@ -154,9 +157,9 @@ async function main(): Promise<void> {
 
       if (activeCount >= config.maxConcurrentTasks) {
         log.info("At capacity, queuing task", { taskId: parsed.taskId, queueSize: taskQueue.length + 1 });
-        taskQueue.push({ task: parsed.task, taskId: parsed.taskId, timeoutMs });
+        taskQueue.push({ task: parsed.task, taskId: parsed.taskId, timeoutMs, runId: parsed.runId });
       } else {
-        processTask(parsed.task, parsed.taskId, timeoutMs);
+        processTask(parsed.task, parsed.taskId, timeoutMs, parsed.runId);
       }
     }
   })();
