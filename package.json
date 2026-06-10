@@ -11,16 +11,16 @@
     "test": "tsx --test tests/**/*.test.ts"
   },
   "dependencies": {
-    "@earendil-works/pi-agent-core": "^0.78.0",
-    "@earendil-works/pi-ai": "^0.78.0",
-    "@earendil-works/pi-coding-agent": "^0.78.0",
+    "@earendil-works/pi-agent-core": "^0.79.1",
+    "@earendil-works/pi-ai": "^0.79.1",
+    "@earendil-works/pi-coding-agent": "^0.79.1",
     "nats": "^2.29.3",
     "prom-client": "^15.1.0",
-    "typebox": "^1.1.38"
+    "typebox": "1.1.38"
   },
   "devDependencies": {
     "@types/node": "^22.19.19",
-    "tsx": "^4.20.6",
+    "tsx": "^4.22.4",
     "typescript": "^5.9.3"
   }
 }

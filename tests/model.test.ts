@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { parseModelStr, splitRoutingSuffix, resolveModel } from "../src/model.ts";
+import { parseModelStr, splitRoutingSuffix, resolveModel, createTrustedSettingsManager } from "../src/model.ts";
 
 test("parseModelStr splits provider from model, defaulting to anthropic", () => {
   assert.deepEqual(parseModelStr("openrouter/deepseek/deepseek-v3.2"), {
@@ -49,6 +49,11 @@ test("resolveModel defaults the ollama provider to the local Ollama OpenAI endpo
     if (prevBase !== undefined) process.env.OPENAI_BASE_URL = prevBase;
     if (prevApiBase !== undefined) process.env.OPENAI_API_BASE = prevApiBase;
   }
+});
+
+test("createTrustedSettingsManager returns a project-trusted manager (pi 0.79 trust gating)", () => {
+  const sm = createTrustedSettingsManager(process.cwd(), process.cwd());
+  assert.equal(sm.isProjectTrusted(), true);
 });
 
 test("resolveModel makes the fallback model's reasoning flag env-overridable", () => {

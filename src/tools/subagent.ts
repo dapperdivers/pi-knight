@@ -9,7 +9,7 @@ import { Type } from "typebox";
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import { createAgentSession, DefaultResourceLoader, defineTool, type AgentSession } from "@earendil-works/pi-coding-agent";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import { resolveModel } from "../model.js";
+import { resolveModel, createTrustedSettingsManager } from "../model.js";
 import { log } from "../logger.js";
 import * as metrics from "../metrics.js";
 
@@ -82,6 +82,8 @@ export const spawnSubagentTool = defineTool({
         agentDir: "/data",
         authStorage,
         modelRegistry,
+        // Explicitly trust the project dir (pi 0.79 project-trust gating); see model.ts.
+        settingsManager: createTrustedSettingsManager("/data", "/data"),
         resourceLoader: new DefaultResourceLoader({
           cwd: "/data",
           agentDir: "/data",

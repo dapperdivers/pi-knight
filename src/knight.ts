@@ -4,7 +4,7 @@ import {
   type AgentSession,
 } from "@earendil-works/pi-coding-agent";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import { resolveModel } from "./model.js";
+import { resolveModel, createTrustedSettingsManager } from "./model.js";
 import type { KnightConfig } from "./config.js";
 import { log } from "./logger.js";
 import { natsTools, setKnightName, setNatsPrefix } from "./tools/nats.js";
@@ -62,6 +62,8 @@ async function getSession(config: KnightConfig): Promise<AgentSession> {
     agentDir: "/data",
     authStorage,
     modelRegistry,
+    // Explicitly trust the project dir (pi 0.79 project-trust gating); see model.ts.
+    settingsManager: createTrustedSettingsManager("/data", "/data"),
     customTools: [
       ...natsTools,
       ...subagentTools,

@@ -6,7 +6,7 @@
  * its sub-agents never drift apart on model selection or auth handling.
  */
 import { getModel, type Api, type Model } from "@earendil-works/pi-ai";
-import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
+import { AuthStorage, ModelRegistry, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { log } from "./logger.js";
 
 // Custom-model catalog read by the SDK ModelRegistry. Defaults to the workspace PVC;
@@ -32,6 +32,26 @@ export interface ResolvedModel {
   modelName: string;
   authStorage: AuthStorage;
   modelRegistry: ModelRegistry;
+}
+
+/**
+ * Build a SettingsManager that explicitly trusts the knight's project directory.
+ *
+ * pi 0.79 added "project trust" gating: project-local settings, resources, instructions,
+ * and context files load only when the project is trusted. The low-level createAgentSession
+ * path we use defaults projectTrusted=true — the ask/never resolution lives in the CLI
+ * app/mode layer (main/print/json/rpc) that we bypass — so knights still load resources
+ * today. We set projectTrusted explicitly anyway so our trust posture is stated in code and
+ * survives a future SDK default flip. Knights run fully autonomous on their own PVC, so
+ * "trusted" is the intended posture.
+ *
+ * We use the create-time `projectTrusted` option (a write-free read of the settings dir) and
+ * deliberately NOT setDefaultProjectTrust(), which persists to /data on every call — the
+ * runtime avoids /data writes for SIGKILL lock safety (cf. in-memory AuthStorage below), and
+ * `defaultProjectTrust` is only consulted by the CLI app layer we don't run.
+ */
+export function createTrustedSettingsManager(cwd: string, agentDir: string): SettingsManager {
+  return SettingsManager.create(cwd, agentDir, { projectTrusted: true });
 }
 
 /** Parse "provider/model" → { provider, modelName }. Defaults provider to anthropic. */
