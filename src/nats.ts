@@ -26,6 +26,17 @@ export interface ParsedTask {
   timeoutMs?: number;
 }
 
+/**
+ * Normalize a task-metadata timeout to a positive, finite millisecond value, or undefined.
+ *
+ * A non-positive timeout (e.g. a dispatcher that marshals an omitted int field as 0) must not
+ * be honored — `setTimeout(abort, 0)` cancels the task before any work happens, looking like a
+ * model failure. Returning undefined lets the caller's `?? config.taskTimeoutMs` fallback win. (#30)
+ */
+export function normalizeTimeoutMs(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
+}
+
 let nc: NatsConnection | null = null;
 let js: JetStreamClient | null = null;
 let consumer: ConsumerMessages | null = null;
@@ -122,7 +133,7 @@ export async function subscribe(config: KnightConfig): Promise<AsyncIterable<Par
       log.info("Consumer config matches — reusing", { durable: durableName, filters: currentFilters });
       // Skip add — consumer already exists with correct config
       consumer = await js.consumers.get(config.natsTasksStream, durableName).then((c) => c.consume());
-      return buildTaskIterable(consumer!, config);
+      return buildTaskIterable(consumer!);
     }
   } catch {
     // Consumer doesn't exist yet — will be created below
@@ -133,10 +144,10 @@ export async function subscribe(config: KnightConfig): Promise<AsyncIterable<Par
   log.info("Consumer ready", { durable: durableName, stream: config.natsTasksStream, filters: filterSubjects });
 
   consumer = await js.consumers.get(config.natsTasksStream, durableName).then((c) => c.consume());
-  return buildTaskIterable(consumer!, config);
+  return buildTaskIterable(consumer!);
 }
 
-function buildTaskIterable(msgs: ConsumerMessages, config: KnightConfig): AsyncIterable<ParsedTask> {
+function buildTaskIterable(msgs: ConsumerMessages): AsyncIterable<ParsedTask> {
   return {
     async *[Symbol.asyncIterator]() {
       for await (const msg of msgs) {
@@ -158,7 +169,10 @@ function buildTaskIterable(msgs: ConsumerMessages, config: KnightConfig): AsyncI
             from: json.from ?? json.payload?.from,
             dispatchedBy: json.dispatched_by ?? json.dispatchedBy,
             timestamp: json.timestamp,
-            timeoutMs: json.metadata?.timeout_ms ?? json.metadata?.timeoutMs,
+            // Only honor a positive, finite timeout. A non-positive value (some dispatchers
+            // marshal an omitted int field as 0) would otherwise abort the task on the next
+            // tick; normalize it to undefined so the knight's configured timeout applies. (#30)
+            timeoutMs: normalizeTimeoutMs(json.metadata?.timeout_ms ?? json.metadata?.timeoutMs),
           };
         } catch {
           // Not JSON — treat entire payload as task text
