@@ -99,15 +99,19 @@ EOF
     return 1
   fi
 
-  TMPDIR=$(mktemp -d)
+  # Local var, NOT TMPDIR: overwriting the inherited TMPDIR (set to
+  # /data/scratch) and then rm-ing it below leaves later mktemp calls (Phase 3)
+  # pointing at a deleted base dir, which crashloops the pod.
+  local installer_tmp
+  installer_tmp=$(mktemp -d)
   log "  Extracting installer..."
-  tar xf "$CACHE_TAR" -C "$TMPDIR"
+  tar xf "$CACHE_TAR" -C "$installer_tmp"
 
   # The tarball extracts to nix-<version>-<arch>/ with a store/ directory
-  INSTALLER_DIR=$(find "$TMPDIR" -maxdepth 1 -name 'nix-*' -type d | head -1)
+  INSTALLER_DIR=$(find "$installer_tmp" -maxdepth 1 -name 'nix-*' -type d | head -1)
   if [ -z "$INSTALLER_DIR" ] || [ ! -d "$INSTALLER_DIR/store" ]; then
-    log "  ERROR: Unexpected installer layout in $TMPDIR"
-    ls -la "$TMPDIR"
+    log "  ERROR: Unexpected installer layout in $installer_tmp"
+    ls -la "$installer_tmp"
     return 1
   fi
 
@@ -138,7 +142,7 @@ EOF
   # Register the profile
   ln -sfn "$NIX_PROFILE" /nix/var/nix/profiles/per-user/node/profile
 
-  rm -rf "$TMPDIR"
+  rm -rf "$installer_tmp"
 
   # Mark as bootstrapped
   touch /nix/.bootstrapped
