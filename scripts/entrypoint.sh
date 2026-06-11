@@ -74,110 +74,36 @@ fi
 # ──────────────────────────────────────────────────────────────────
 # Phase 2: Nix bootstrap (first boot only)
 # ──────────────────────────────────────────────────────────────────
+# Three modes:
+#   - /nix read-only  → shared store; tools prebuilt by the operator's build
+#     Job. Skip bootstrap/build, just source the per-knight profile.
+#   - /nix writable   → per-pod PVC store (legacy). Bootstrap + build locally.
+#   - no /nix         → skip Nix entirely.
 NIX_PROFILE="$HOME/.nix-profile"
-NIX_CONF="/nix/etc/nix/nix.conf"
+NIX_SHARED_STORE="false"
 
-bootstrap_nix() {
-  log "Phase 2: Installing Nix to PVC (first boot)..."
+# shellcheck source=scripts/nix-lib.sh
+. /app/scripts/nix-lib.sh
 
-  # Create directory structure Nix expects
-  mkdir -p /nix/store /nix/var/nix/profiles/per-user/node \
-           /nix/var/nix/gcroots/per-user/node /nix/etc/nix
-
-  # Write nix.conf for single-user mode with flakes
-  cat > "$NIX_CONF" <<'EOF'
-build-users-group =
-experimental-features = nix-command flakes
-sandbox = false
-max-jobs = auto
-EOF
-
-  # Extract cached installer tarball
-  CACHE_TAR=$(ls /opt/nix-cache/nix-*.tar.xz 2>/dev/null | head -1)
-  if [ -z "$CACHE_TAR" ]; then
-    log "  ERROR: No cached Nix installer found"
-    return 1
-  fi
-
-  # Local var, NOT TMPDIR: overwriting the inherited TMPDIR (set to
-  # /data/scratch) and then rm-ing it below leaves later mktemp calls (Phase 3)
-  # pointing at a deleted base dir, which crashloops the pod.
-  local installer_tmp
-  installer_tmp=$(mktemp -d)
-  log "  Extracting installer..."
-  tar xf "$CACHE_TAR" -C "$installer_tmp"
-
-  # The tarball extracts to nix-<version>-<arch>/ with a store/ directory
-  INSTALLER_DIR=$(find "$installer_tmp" -maxdepth 1 -name 'nix-*' -type d | head -1)
-  if [ -z "$INSTALLER_DIR" ] || [ ! -d "$INSTALLER_DIR/store" ]; then
-    log "  ERROR: Unexpected installer layout in $installer_tmp"
-    ls -la "$installer_tmp"
-    return 1
-  fi
-
-  # Copy store paths from the installer
-  log "  Copying store paths..."
-  cp -a "$INSTALLER_DIR/store/"* /nix/store/
-
-  # Find the nix binary and create profile links
-  NIX_STORE_PATH=$(find /nix/store -maxdepth 1 -name '*-nix-*' -type d | grep -v '\.drv$' | head -1)
-  if [ -z "$NIX_STORE_PATH" ] || [ ! -x "$NIX_STORE_PATH/bin/nix" ]; then
-    # Try harder — look for the actual binary
-    NIX_STORE_PATH=$(find /nix/store -name 'nix' -executable -path '*/bin/nix' -printf '%h/..\n' 2>/dev/null | head -1)
-    NIX_STORE_PATH=$(cd "$NIX_STORE_PATH" 2>/dev/null && pwd)
-  fi
-
-  if [ -z "$NIX_STORE_PATH" ] || [ ! -x "$NIX_STORE_PATH/bin/nix" ]; then
-    log "  ERROR: Could not find nix binary in store"
-    find /nix/store -name 'nix' -executable 2>/dev/null | head -5
-    return 1
-  fi
-
-  log "  Nix store path: $NIX_STORE_PATH"
-
-  # Create profile symlink
-  mkdir -p "$(dirname "$NIX_PROFILE")"
-  ln -sfn "$NIX_STORE_PATH" "$NIX_PROFILE"
-
-  # Register the profile
-  ln -sfn "$NIX_PROFILE" /nix/var/nix/profiles/per-user/node/profile
-
-  rm -rf "$installer_tmp"
-
-  # Mark as bootstrapped
-  touch /nix/.bootstrapped
-  log "  Nix installed ✓ ($(du -sh /nix/store | cut -f1))"
-}
-
-if [ -d /nix ] && [ -w /nix ]; then
-  if [ ! -f /nix/.bootstrapped ]; then
-    bootstrap_nix
+if [ -d /nix ] && [ ! -w /nix ]; then
+  # Shared read-only store — tools come from the operator-published profile.
+  NIX_SHARED_STORE="true"
+  KNIGHT_NIX_PROFILE="${KNIGHT_NIX_PROFILE:-/nix/var/nix/profiles/knights/$(echo "${KNIGHT_NAME:-}" | tr '[:upper:]' '[:lower:]')}"
+  if [ -d "$KNIGHT_NIX_PROFILE/bin" ]; then
+    export PATH="$KNIGHT_NIX_PROFILE/bin:$PATH"
+    export NIX_CONF_DIR="/nix/etc/nix"
+    log "Phase 2: Shared Nix store (read-only) — profile $KNIGHT_NIX_PROFILE ✓"
   else
-    log "Phase 2: Nix already bootstrapped ✓"
-    # Restore profile symlink if missing (stale PVC / domain change)
-    if [ ! -d "$NIX_PROFILE/bin" ]; then
-      log "  Profile symlink broken — restoring..."
-      NIX_STORE_PATH=$(find /nix/store -maxdepth 1 -name '*-nix-*' -type d 2>/dev/null | grep -v '\.drv$' | head -1)
-      if [ -n "$NIX_STORE_PATH" ] && [ -x "$NIX_STORE_PATH/bin/nix" ]; then
-        mkdir -p "$(dirname "$NIX_PROFILE")"
-        ln -sfn "$NIX_STORE_PATH" "$NIX_PROFILE"
-        log "  Profile restored → $NIX_STORE_PATH"
-      else
-        log "  WARNING: Could not find nix binary in store — re-bootstrapping"
-        rm -f /nix/.bootstrapped
-        bootstrap_nix
-      fi
-    fi
+    log "Phase 2: Shared Nix store mounted but no profile at $KNIGHT_NIX_PROFILE yet (build pending)"
+  fi
+elif [ -d /nix ] && [ -w /nix ]; then
+  rt_bootstrap_nix
+  rt_restore_profile
+  if rt_source_nix; then
+    log "Phase 2: Nix ready — $(nix --version 2>/dev/null || echo 'binary found')"
   fi
 else
   log "Phase 2: No /nix mount — skipping Nix bootstrap"
-fi
-
-# Source Nix into PATH
-if [ -d "$NIX_PROFILE/bin" ]; then
-  export PATH="$NIX_PROFILE/bin:$PATH"
-  export NIX_CONF_DIR="/nix/etc/nix"
-  log "  Nix $(nix --version 2>/dev/null || echo 'binary found')"
 fi
 
 # ──────────────────────────────────────────────────────────────────
@@ -187,7 +113,9 @@ FLAKE_FILE="/config/flake.nix"
 NIX_ENV="/data/nix-env"
 HASH_FILE="/data/.nix-flake-hash"
 
-if [ -f "$FLAKE_FILE" ] && command -v nix >/dev/null 2>&1; then
+if [ "$NIX_SHARED_STORE" = "true" ]; then
+  log "Phase 3: Shared store — flake tools prebuilt by operator, skipping local build"
+elif [ -f "$FLAKE_FILE" ] && command -v nix >/dev/null 2>&1; then
   NEW_HASH=$(sha256sum "$FLAKE_FILE" | cut -d' ' -f1)
 
   if [ -f "$HASH_FILE" ] && [ "$(cat "$HASH_FILE")" = "$NEW_HASH" ] \
