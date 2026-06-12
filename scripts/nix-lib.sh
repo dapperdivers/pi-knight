@@ -30,8 +30,16 @@ EOF
 # rt_bootstrap_nix — install Nix into /nix from the image-cached installer
 # tarball if not already present. Idempotent. Returns non-zero on failure.
 rt_bootstrap_nix() {
-  if [ -f /nix/.bootstrapped ] && [ -d "$NIX_PROFILE/bin" ]; then
-    return 0
+  # Fast path: the store is already populated (a warm per-pod PVC, or — the big
+  # one — the shared store every build Job mounts). A fresh build pod has an
+  # empty container HOME, so $NIX_PROFILE/bin is absent even though /nix is fully
+  # built; gating on it forced a full installer re-copy (cp -a of the store) on
+  # EVERY build pod, and on the shared store that re-copy runs inside the build
+  # lock, serially inflating every knight's critical section. Repairing the
+  # profile symlink via rt_restore_profile is a cheap, store-read-only operation.
+  if [ -f /nix/.bootstrapped ]; then
+    rt_restore_profile
+    return $?
   fi
 
   rt_log "Installing Nix to PVC..."
