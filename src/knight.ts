@@ -31,6 +31,14 @@ export interface TaskResult {
 // Persistent session — reused across tasks within a chain run
 let session: AgentSession | null = null;
 
+// In-flight session creation, so a task arriving during startup pre-warm awaits the
+// same createAgentSession call instead of racing a second one.
+let sessionCreating: Promise<AgentSession> | null = null;
+
+// True once the current session has been prompted. An unused session has no context
+// to bleed, so a new chain run can adopt it instead of paying dispose+recreate.
+let sessionUsed = false;
+
 // The chain runId the current session belongs to. A task whose runId differs starts a
 // fresh session to prevent cross-run context bleed; tasks without a runId reuse it. (#31)
 let currentRunId: string | undefined;
@@ -38,6 +46,22 @@ let currentRunId: string | undefined;
 /** Get the active session (or null if not yet created). Used by introspect. */
 export function getActiveSession(): AgentSession | null {
   return session;
+}
+
+/**
+ * Pre-warm the persistent session at startup (fire-and-forget).
+ *
+ * Cold createAgentSession has been observed to take ~79s on knights with a
+ * long PVC session history — latency that otherwise lands inside the first
+ * task's timeout window. Failures are logged and left for the first task's
+ * getSession() to retry, so a transient error here never crashes the knight.
+ */
+export function warmSession(config: KnightConfig): void {
+  getSession(config)
+    .then(() => log.info("Session pre-warmed at startup"))
+    .catch((err) =>
+      log.warn("Session pre-warm failed — first task will retry", { error: String(err) }),
+    );
 }
 
 // Serialize prompt() calls — Pi SDK sessions handle one prompt at a time
@@ -51,8 +75,19 @@ let promptLock: Promise<void> = Promise.resolve();
  */
 async function getSession(config: KnightConfig): Promise<AgentSession> {
   if (session) return session;
+  if (sessionCreating) return sessionCreating;
+  sessionCreating = createSession(config);
+  try {
+    return await sessionCreating;
+  } finally {
+    sessionCreating = null;
+  }
+}
 
+async function createSession(config: KnightConfig): Promise<AgentSession> {
+  const tStart = Date.now();
   const { model, provider, modelName, authStorage, modelRegistry } = resolveModel(config.knightModel);
+  const resolveModelMs = Date.now() - tStart;
 
   log.info("Creating persistent session", { provider, model: modelName });
 
@@ -64,6 +99,7 @@ async function getSession(config: KnightConfig): Promise<AgentSession> {
 
   const thinkingLevel = (config.thinkingLevel ?? "off") as ThinkingLevel;
 
+  const tCreate = Date.now();
   const { session: newSession } = await createAgentSession({
     model,
     thinkingLevel,
@@ -89,21 +125,25 @@ async function getSession(config: KnightConfig): Promise<AgentSession> {
     }),
   });
 
-  session = newSession;
+  const createAgentSessionMs = Date.now() - tCreate;
+
+  // Configure the session fully before publishing it to the module-level
+  // `session` — a task arriving mid-pre-warm must never see a session whose
+  // hooks aren't installed yet.
 
   // Set maxRetryDelayMs on the underlying agent
-  session.agent.maxRetryDelayMs = config.maxRetryDelayMs;
+  newSession.agent.maxRetryDelayMs = config.maxRetryDelayMs;
   log.info("Retry delay cap configured", { maxRetryDelayMs: config.maxRetryDelayMs });
 
   // Enable parallel tool execution — agent runs independent tool calls concurrently.
   // Matches the system prompt instruction to maximise parallel tool calls where possible.
-  session.agent.toolExecution = "parallel";
+  newSession.agent.toolExecution = "parallel";
 
   // Install tool hooks — safety guardrails, observability, metrics
-  setupToolHooks(session);
+  setupToolHooks(newSession);
 
   // Install custom compaction hook — knight-specific context preservation
-  setupCompactionHook(session, config);
+  setupCompactionHook(newSession, config);
 
   // Context reduction is handled entirely by Pi's built-in compaction (summarizes and
   // resets the prefix cleanly when context approaches the window). We deliberately do NOT
@@ -112,20 +152,20 @@ async function getSession(config: KnightConfig): Promise<AgentSession> {
 
   // thinkingBudgets — set custom token budgets if thinking is enabled
   if (thinkingLevel !== "off") {
-    session.agent.thinkingBudgets = {
+    newSession.agent.thinkingBudgets = {
       low: config.thinkingBudgetLow,
       medium: config.thinkingBudgetMedium,
       high: config.thinkingBudgetHigh,
     };
     log.info("Thinking budgets configured", {
       level: thinkingLevel,
-      budgets: session.agent.thinkingBudgets,
+      budgets: newSession.agent.thinkingBudgets,
     });
   }
 
   // onPayload observability hook — log model/token metadata for each LLM call.
   // NOTE: field is `onPayload` (no underscore). The previous `_onPayload` was a no-op.
-  session.agent.onPayload = async (payload: unknown, model: any) => {
+  newSession.agent.onPayload = async (payload: unknown, model: any) => {
     try {
       const p = payload as any;
       // Summary log at info level — safe to always emit
@@ -150,7 +190,7 @@ async function getSession(config: KnightConfig): Promise<AgentSession> {
   // Log active tool names at session create time so we can verify custom tools
   // are actually registered with the agent (not just in the tool registry).
   try {
-    const activeToolNames = (session.agent.state?.tools ?? []).map((t: any) => t?.name).filter(Boolean);
+    const activeToolNames = (newSession.agent.state?.tools ?? []).map((t: any) => t?.name).filter(Boolean);
     log.info("Agent active tools", {
       count: activeToolNames.length,
       names: activeToolNames,
@@ -159,15 +199,23 @@ async function getSession(config: KnightConfig): Promise<AgentSession> {
     log.warn("Failed to introspect active tools", { error: String(err) });
   }
 
-  // Log baseline stats (session may have prior history from PVC)
-  const stats = session.getSessionStats();
+  // Log baseline stats (session may have prior history from PVC).
+  // Phase timings answer "what eats a slow cold start" (observed 79s on a
+  // knight with PVC history): createAgentSessionMs covers history load +
+  // model registry; anything else shows up in the total.
+  const stats = newSession.getSessionStats();
   log.info("Persistent session created", {
     sessionId: stats.sessionId,
     priorMessages: stats.totalMessages,
     priorCost: stats.cost,
+    resolveModelMs,
+    createAgentSessionMs,
+    totalMs: Date.now() - tStart,
   });
 
-  return session;
+  session = newSession;
+  sessionUsed = false;
+  return newSession;
 }
 
 /**
@@ -192,17 +240,27 @@ export async function executeTask(
   // Start a fresh session when a new chain run begins (#31). This runs inside the
   // serialized region so it can't race a concurrent task's prompt. runId is optional:
   // ad-hoc/mission tasks (and older operators) omit it and keep reusing the session.
+  // Exception: a session that was never prompted and carries no PVC history has no
+  // context to bleed — adopt it (this is what makes startup pre-warming effective;
+  // disposing here would throw away the warmed session on every first chain task).
   if (runId && runId !== currentRunId && session) {
-    log.info("New chain run — resetting agent session to avoid context bleed", {
-      previousRunId: currentRunId ?? null,
-      runId,
-    });
-    try {
-      session.dispose();
-    } catch (err) {
-      log.warn("Failed to dispose prior session on run change", { error: String(err) });
+    if (!sessionUsed && session.getSessionStats().totalMessages === 0) {
+      log.info("Adopting pre-warmed unused session for new chain run", {
+        previousRunId: currentRunId ?? null,
+        runId,
+      });
+    } else {
+      log.info("New chain run — resetting agent session to avoid context bleed", {
+        previousRunId: currentRunId ?? null,
+        runId,
+      });
+      try {
+        session.dispose();
+      } catch (err) {
+        log.warn("Failed to dispose prior session on run change", { error: String(err) });
+      }
+      session = null;
     }
-    session = null;
   }
   if (runId) currentRunId = runId;
 
@@ -231,6 +289,7 @@ export async function executeTask(
   }
 
   try {
+    sessionUsed = true;
     await sess.prompt(task);
   } finally {
     if (signal && abortHandler) {

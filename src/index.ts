@@ -3,7 +3,7 @@ import { initLogger, log } from "./logger.js";
 import { connectNats, subscribe, publishResult, drain } from "./nats.js";
 import { startHealthServer, stopHealthServer, setSkillCount, setActiveTaskCount } from "./health.js";
 import { loadSkills } from "@earendil-works/pi-coding-agent";
-import { executeTask, getActiveSession } from "./knight.js";
+import { executeTask, getActiveSession, warmSession } from "./knight.js";
 import { startIntrospect } from "./introspect.js";
 import { resolveModel } from "./model.js";
 import { preflightModel } from "./preflight.js";
@@ -58,6 +58,11 @@ async function main(): Promise<void> {
     }
   }
   setSkillCount(skillCount);
+
+  // Pre-warm the agent session in the background (after skills so the session
+  // snapshot includes them, before task subscribe so cold-start latency —
+  // observed 79s with PVC history — lands here, not in the first task's window).
+  warmSession(config);
 
   // Connect to NATS
   await connectNats(config);
