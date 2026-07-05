@@ -12,7 +12,7 @@ import { subagentTools, setParentModel, setParentKnight } from "./tools/subagent
 import { browserTools } from "./tools/browser.js";
 import { setupToolHooks } from "./hooks.js";
 import { setupCompactionHook, updateSessionNotes } from "./memory.js";
-import { getBestAssistantResult, resolveTaskOutcome } from "./result-extraction.js";
+import { describeSessionFailure, getBestAssistantResult, resolveTaskOutcome, summarizeSessionTail } from "./result-extraction.js";
 
 
 export interface TaskResult {
@@ -262,9 +262,21 @@ export async function executeTask(
   // Extract the most recent real deliverable, not an intermediate tool-call payload.
   // When the agent yields nothing deliverable, report an explicit failure instead of
   // publishing a sentinel as a successful result, so consumers see the failure. (#31)
-  const { result: resultText, success, error } = resolveTaskOutcome(getBestAssistantResult(sess));
+  // A silent LLM error or abort (the Pi loop records those on the final assistant
+  // message and resolves prompt() normally) is surfaced as the failure reason rather
+  // than being masked by the generic no-output message.
+  const deliverable = getBestAssistantResult(sess);
+  const failureReason = deliverable == null
+    ? describeSessionFailure(sess, signal?.aborted ?? false)
+    : undefined;
+  const { result: resultText, success, error } = resolveTaskOutcome(deliverable, failureReason);
   if (!success) {
-    log.warn("Agent produced no deliverable output", { taskLength: task.length, runId: runId ?? null });
+    log.warn("Task produced no deliverable", {
+      error,
+      taskLength: task.length,
+      runId: runId ?? null,
+      sessionTail: summarizeSessionTail(sess),
+    });
   }
 
   // Update session notes after each task (fire-and-forget)
@@ -345,7 +357,10 @@ parameters in tool calls.
 4. NEVER create files unless necessary for the task. Prefer editing existing files.
 5. If a tool call fails, understand WHY before retrying — don't loop on the same error.
 6. Prefer targeted file reads (offset/limit) over loading entire files.
-7. After completing a task that involves tool use, provide a concise summary of the
-   work you've done so the caller gets a clear result without needing to parse tool output.
+7. ALWAYS end the task with a final plain-text message stating the result or deliverable.
+   The runtime publishes that final text as your task result — if you stop after a tool
+   call, or end with an empty message, the task is reported as FAILED with no output,
+   even when the tool work itself succeeded. After tool use, summarize what you did and
+   state the deliverable in text.
 </critical_rules>`;
 }
