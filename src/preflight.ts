@@ -71,6 +71,53 @@ export async function preflightModel(model: Model<Api>): Promise<void> {
   }
 }
 
+export interface PreflightRetryOptions {
+  /** First retry delay; doubles each failure. Default 5s. */
+  initialDelayMs?: number;
+  /** Backoff cap. Default 60s. */
+  maxDelayMs?: number;
+  /** Called on each failed attempt (drive health/degraded reporting from here). */
+  onAttemptFailed?: (error: string, attempt: number, nextDelayMs: number) => void;
+  /** Injectable for tests. */
+  sleep?: (ms: number) => Promise<void>;
+}
+
+/**
+ * Preflight with in-process retry instead of a fatal throw.
+ *
+ * An unreachable local endpoint used to propagate out of main() and exit the
+ * process → CrashLoopBackOff. A knight that can't reach its model isn't broken,
+ * it's degraded: stay up, keep the health server answering, retry with capped
+ * exponential backoff, and only proceed (NATS connect → Ready) once the
+ * endpoint answers. Resolves when preflight passes; never rejects.
+ */
+export async function preflightModelUntilReady(
+  model: Model<Api>,
+  opts: PreflightRetryOptions = {},
+): Promise<void> {
+  const initialDelayMs = opts.initialDelayMs ?? 5_000;
+  const maxDelayMs = opts.maxDelayMs ?? 60_000;
+  const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+
+  let delayMs = initialDelayMs;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await preflightModel(model);
+      return;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      opts.onAttemptFailed?.(msg, attempt, delayMs);
+      log.error("Model preflight failed — knight degraded, retrying", {
+        attempt,
+        retryInMs: delayMs,
+        error: msg,
+      });
+      await sleep(delayMs);
+      delayMs = Math.min(delayMs * 2, maxDelayMs);
+    }
+  }
+}
+
 /** Hit the OpenAI-compatible /models list: fatal if unreachable, warn if model absent. */
 async function checkReachableAndModel(baseUrl: string, model: Model<Api>): Promise<void> {
   let res: Response;
