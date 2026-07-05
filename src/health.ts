@@ -7,12 +7,17 @@ import { handleIntrospect } from "./introspect.js";
 let server: http.Server | null = null;
 let skillCount = 0;
 let activeTaskCount = 0;
+let degradedReason: string | null = null;
 
 export function setSkillCount(n: number): void {
   skillCount = n;
 }
 export function setActiveTaskCount(n: number): void {
   activeTaskCount = n;
+}
+/** Mark the knight degraded (readiness 503 with reason) or recovered (null). */
+export function setDegradedReason(reason: string | null): void {
+  degradedReason = reason;
 }
 
 export function startHealthServer(config: KnightConfig): void {
@@ -32,11 +37,12 @@ export function startHealthServer(config: KnightConfig): void {
       );
     } else if (url === "/ready") {
       const nats = getNatsStatus();
-      const status = nats.connected ? 200 : 503;
-      res.writeHead(status, { "Content-Type": "application/json" });
+      const ready = nats.connected && degradedReason == null;
+      res.writeHead(ready ? 200 : 503, { "Content-Type": "application/json" });
       res.end(
         JSON.stringify({
-          status: nats.connected ? "ready" : "not_ready",
+          status: ready ? "ready" : degradedReason != null ? "degraded" : "not_ready",
+          ...(degradedReason != null ? { degradedReason } : {}),
           nats: nats.connected ? "connected" : "disconnected",
           activeTasks: activeTaskCount,
           skillsLoaded: skillCount,

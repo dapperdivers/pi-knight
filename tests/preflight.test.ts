@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { Api, Model } from "@earendil-works/pi-ai";
-import { isLocalEndpoint, preflightModel } from "../src/preflight.ts";
+import { isLocalEndpoint, preflightModel, preflightModelUntilReady } from "../src/preflight.ts";
 
 /** Minimal Model stub — only the fields preflight reads matter. */
 function makeModel(overrides: Partial<Model<Api>>): Model<Api> {
@@ -146,6 +146,50 @@ test("preflightModel: num_ctx probe failure is non-fatal", async () => {
   });
   try {
     await preflightModel(makeModel({ id: "llama3.1" })); // must not reject
+  } finally {
+    restore();
+  }
+});
+
+test("preflightModelUntilReady: retries with backoff until the endpoint answers, never rejects", async () => {
+  let failuresLeft = 3;
+  const { restore } = stubFetch((url) => {
+    if (url.endsWith("/models")) {
+      if (failuresLeft > 0) {
+        failuresLeft--;
+        return "throw"; // unreachable endpoint
+      }
+      return { ok: true, json: () => ({ data: [{ id: "llama3.1" }] }) };
+    }
+    return { ok: true, json: () => ({}) };
+  });
+
+  const sleeps: number[] = [];
+  const failures: Array<{ attempt: number; error: string }> = [];
+  try {
+    await preflightModelUntilReady(makeModel({ id: "llama3.1" }), {
+      initialDelayMs: 10,
+      maxDelayMs: 25,
+      sleep: async (ms) => { sleeps.push(ms); },
+      onAttemptFailed: (error, attempt) => failures.push({ attempt, error }),
+    });
+  } finally {
+    restore();
+  }
+
+  assert.equal(failures.length, 3, "one onAttemptFailed per failed probe");
+  assert.ok(failures.every((f) => f.error.includes("unreachable")), "reason carries the preflight error");
+  assert.deepEqual(sleeps, [10, 20, 25], "exponential backoff capped at maxDelayMs");
+});
+
+test("preflightModelUntilReady: cloud endpoint resolves immediately with no retries", async () => {
+  const { calls, restore } = stubFetch(() => ({ ok: true }));
+  try {
+    await preflightModelUntilReady(
+      makeModel({ provider: "openrouter", baseUrl: "https://openrouter.ai/api/v1" }),
+      { sleep: async () => { assert.fail("must not sleep"); } },
+    );
+    assert.equal(calls.length, 0);
   } finally {
     restore();
   }
