@@ -1,16 +1,19 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  describeSessionFailure,
   extractTextFromAssistantContent,
   getBestAssistantResult,
   isDeliverableAssistantText,
   resolveTaskOutcome,
+  summarizeSessionTail,
 } from "../src/result-extraction.ts";
 
 type MockMessage = {
   role?: string;
   content?: unknown;
   stopReason?: string;
+  errorMessage?: string;
 };
 
 type MockSession = {
@@ -97,4 +100,96 @@ test("resolveTaskOutcome maps no deliverable to an explicit failure, not a senti
   assert.equal(outcome.success, false);
   assert.equal(outcome.error, "Agent produced no deliverable output");
   assert.equal(outcome.result, "Agent produced no deliverable output");
+});
+
+test("resolveTaskOutcome prefers a specific failure reason over the generic message", () => {
+  const outcome = resolveTaskOutcome(undefined, "LLM call failed: 429 rate limited");
+  assert.equal(outcome.success, false);
+  assert.equal(outcome.error, "LLM call failed: 429 rate limited");
+  assert.equal(outcome.result, "LLM call failed: 429 rate limited");
+});
+
+test("resolveTaskOutcome ignores the failure reason when a deliverable exists", () => {
+  const outcome = resolveTaskOutcome("Real answer", "LLM call failed: should not appear");
+  assert.deepEqual(outcome, { result: "Real answer", success: true });
+});
+
+test("describeSessionFailure surfaces a silent LLM stream error with its provider message", () => {
+  const reason = describeSessionFailure(
+    session([
+      { role: "user", content: "do the thing" },
+      { role: "assistant", content: [], stopReason: "error", errorMessage: "402 insufficient credits" },
+    ]) as any,
+    false,
+  );
+  assert.equal(reason, "LLM call failed: 402 insufficient credits");
+});
+
+test("describeSessionFailure reports an abort as a timeout when the task signal fired", () => {
+  const aborted = session([
+    { role: "assistant", content: [], stopReason: "aborted" },
+  ]) as any;
+  assert.equal(
+    describeSessionFailure(aborted, true),
+    "Task aborted before producing output (task timeout)",
+  );
+  assert.equal(
+    describeSessionFailure(aborted, false),
+    "Task aborted before producing output",
+  );
+});
+
+test("describeSessionFailure returns undefined for a normal stop with no output", () => {
+  const reason = describeSessionFailure(
+    session([
+      { role: "assistant", content: [], stopReason: "stop" },
+    ]) as any,
+    false,
+  );
+  assert.equal(reason, undefined);
+});
+
+test("describeSessionFailure only inspects the LAST assistant message — a recovered earlier error is not reported", () => {
+  const reason = describeSessionFailure(
+    session([
+      { role: "assistant", content: [], stopReason: "error", errorMessage: "transient" },
+      { role: "assistant", content: [], stopReason: "stop" },
+    ]) as any,
+    false,
+  );
+  assert.equal(reason, undefined);
+});
+
+test("summarizeSessionTail reports roles, stopReasons and part-type counts without content", () => {
+  const tail = summarizeSessionTail(
+    session([
+      { role: "user", content: "secret task text" },
+      {
+        role: "assistant",
+        stopReason: "toolUse",
+        content: [
+          { type: "thinking", thinking: "private" },
+          { type: "toolCall", id: "call_1" },
+          { type: "toolCall", id: "call_2" },
+        ],
+      },
+      { role: "assistant", stopReason: "error", errorMessage: "boom", content: [] },
+    ]) as any,
+  );
+
+  assert.equal(tail.length, 3);
+  assert.deepEqual(tail[1], {
+    role: "assistant",
+    stopReason: "toolUse",
+    parts: { thinking: 1, toolCall: 2 },
+  });
+  assert.deepEqual(tail[2], {
+    role: "assistant",
+    stopReason: "error",
+    errorMessage: "boom",
+    parts: {},
+  });
+  // Content must never leak into logs — only lengths/counts.
+  assert.ok(!JSON.stringify(tail).includes("secret task text"));
+  assert.ok(!JSON.stringify(tail).includes("private"));
 });
