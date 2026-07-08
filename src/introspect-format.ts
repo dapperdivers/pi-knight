@@ -103,6 +103,48 @@ export function recentItemsForEntry(entry: any): Record<string, unknown>[] {
   return [base];
 }
 
+// A persisted session file is JSONL: an optional `{type:"session",...}` header
+// line followed by one SessionTreeEntry per line. Parse into header + entries.
+export function parseSessionFile(contents: string): { header: any | null; entries: any[] } {
+  let header: any | null = null;
+  const entries: any[] = [];
+  for (const line of contents.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    let obj: any;
+    try {
+      obj = JSON.parse(trimmed);
+    } catch {
+      continue; // skip malformed/partial lines
+    }
+    if (obj && obj.type === "session") {
+      header = obj;
+    } else if (obj) {
+      entries.push(obj);
+    }
+  }
+  return { header, entries };
+}
+
+// Compact metadata for the session-history list. `id`/`sizeBytes` come from the
+// file; everything else is derived from the parsed contents.
+export function summarizeSession(
+  parsed: { header: any | null; entries: any[] },
+  meta: { id: string; sizeBytes?: number },
+): Record<string, unknown> {
+  const { header, entries } = parsed;
+  const messages = entries.filter((e) => e.type === "message");
+  const firstUser = messages.find((e) => e.message?.role === "user");
+  return {
+    id: meta.id,
+    startedAt: header?.timestamp ?? entries[0]?.timestamp ?? null,
+    entryCount: entries.length,
+    messageCount: messages.length,
+    firstPrompt: firstUser ? previewText(firstUser.message?.content, 140) : "",
+    sizeBytes: meta.sizeBytes ?? null,
+  };
+}
+
 // One-line summary for the tree view.
 export function summarizeEntry(entry: any): string {
   if (entry.type !== "message" || !entry.message) return entry.type;

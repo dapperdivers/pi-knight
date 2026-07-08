@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { previewText, recentItemsForEntry, summarizeEntry } from "../src/introspect-format.ts";
+import { parseSessionFile, previewText, recentItemsForEntry, summarizeEntry, summarizeSession } from "../src/introspect-format.ts";
 
 // Shapes below mirror @earendil-works/pi-ai 0.79.1 exactly (verified against a
 // live agravain session): assistant tool calls are `type: "toolCall"` blocks;
@@ -86,6 +86,37 @@ test("previewText keeps only text blocks and clamps length", () => {
   assert.equal(previewText([{ type: "text", text: "hello" }, { type: "toolCall", name: "x" }]), "hello");
   assert.equal(previewText("x".repeat(600)).length, 500);
   assert.equal(previewText(undefined), "");
+});
+
+test("parseSessionFile splits the session header from entries and skips junk", () => {
+  const jsonl = [
+    JSON.stringify({ type: "session", version: 3, id: "abc", timestamp: "2026-07-08T11:00:00Z", cwd: "/data" }),
+    JSON.stringify({ type: "model_change", id: "m1", timestamp: "2026-07-08T11:00:00Z" }),
+    "",
+    "{ truncated partial line",
+    JSON.stringify({ type: "message", id: "u1", timestamp: "2026-07-08T11:00:01Z", message: { role: "user", content: "hi" } }),
+  ].join("\n");
+  const { header, entries } = parseSessionFile(jsonl);
+  assert.equal(header.id, "abc");
+  assert.equal(entries.length, 2, "model_change + message, junk/blank skipped");
+});
+
+test("summarizeSession derives counts and the first user prompt", () => {
+  const parsed = parseSessionFile(
+    [
+      JSON.stringify({ type: "session", id: "s1", timestamp: "2026-07-08T11:00:00Z" }),
+      JSON.stringify({ type: "model_change", id: "m1", timestamp: "2026-07-08T11:00:00Z" }),
+      JSON.stringify({ type: "message", id: "u1", timestamp: "2026-07-08T11:00:01Z", message: { role: "user", content: [{ type: "text", text: "Generate today's digest" }] } }),
+      JSON.stringify({ type: "message", id: "a1", timestamp: "2026-07-08T11:00:02Z", message: { role: "assistant", content: [{ type: "text", text: "ok" }] } }),
+    ].join("\n"),
+  );
+  const meta = summarizeSession(parsed, { id: "s1", sizeBytes: 1234 });
+  assert.equal(meta.id, "s1");
+  assert.equal(meta.startedAt, "2026-07-08T11:00:00Z");
+  assert.equal(meta.entryCount, 3);
+  assert.equal(meta.messageCount, 2);
+  assert.equal(meta.firstPrompt, "Generate today's digest");
+  assert.equal(meta.sizeBytes, 1234);
 });
 
 test("summarizeEntry labels tool calls and results by tool name", () => {
