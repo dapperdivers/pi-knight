@@ -52,9 +52,15 @@ export function startHealthServer(config: KnightConfig): void {
       );
     } else if (url === "/introspect" || url?.startsWith("/introspect?")) {
       const urlObj = new URL(url, "http://localhost");
-      const type = (urlObj.searchParams.get("type") ?? "stats") as "stats" | "recent" | "tree";
+      const type = (urlObj.searchParams.get("type") ?? "stats") as
+        | "stats"
+        | "recent"
+        | "tree"
+        | "history"
+        | "session";
       const limit = parseInt(urlObj.searchParams.get("limit") ?? "20", 10);
-      const result = handleIntrospect({ type, limit }, config);
+      const id = urlObj.searchParams.get("id") ?? undefined;
+      const result = await handleIntrospect({ type, limit, id }, config);
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify(result, null, 2));
     } else if (url === "/metrics") {
